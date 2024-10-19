@@ -15,18 +15,22 @@ import (
 )
 
 const (
-	PREAMBLE_LENGTH     = 440
-	PREAMBLE_START_FREQ = 1000.0
-	PREAMBLE_END_FREQ   = 20000.0
+	PREAMBLE_LENGTH     = 10000
+	PREAMBLE_START_FREQ = 6000.0
+	PREAMBLE_END_FREQ   = 12000.0
 	SAMPLE_RATE         = 48000.0
 
-	SAMPLE_PER_BIT = 100
-	BIT_PER_FRAME  = 1000
+	SAMPLE_PER_BIT      = 30
+	EXPECTED_TOTAL_BITS = 1000
+	BIT_PER_FRAME       = 1000
 
-	AMPLITUDE = 1.0
-	ONE_FREQ  = 440
+	AMPLITUDE  = 1.0
+	ONE_FREQ   = 800
+	ZERO_FREQ  = 1400
+	ONE_PHASE  = 0
+	ZERO_PHASE = math.Pi
 
-	POWER_THRESHOLD = 2
+	POWER_THRESHOLD = 50
 	CRC_BITS        = utils.CRC_BITS
 )
 
@@ -49,8 +53,8 @@ func Modulation(modulatedData chan []int32, inputBits []bool) {
 	// get the signal for one and zero
 	for i := 0; i < SAMPLE_PER_BIT; i++ {
 		t := float64(i) / SAMPLE_RATE
-		oneSignal[i] = AMPLITUDE * math.Sin(2*math.Pi*ONE_FREQ*t)
-		zeroSignal[i] = -oneSignal[i]
+		oneSignal[i] = AMPLITUDE * math.Sin(2*math.Pi*ONE_FREQ*t+ONE_PHASE)
+		zeroSignal[i] = AMPLITUDE * math.Sin(2*math.Pi*ZERO_FREQ*t+ZERO_PHASE)
 	}
 
 	// // reserve the space for modulatedData if needed
@@ -219,11 +223,13 @@ func (d *Demodulator) Mainloop() {
 func Demodulation(receivingData chan []int32, demodulatedBits chan []bool) {
 
 	oneSignal := make([]float64, SAMPLE_PER_BIT)
+	zeroSignal := make([]float64, SAMPLE_PER_BIT)
 
 	// get the signal for one
 	for i := 0; i < SAMPLE_PER_BIT; i++ {
 		t := float64(i) / SAMPLE_RATE
-		oneSignal[i] = AMPLITUDE * math.Sin(2*math.Pi*ONE_FREQ*t)
+		oneSignal[i] = AMPLITUDE * math.Sin(2*math.Pi*ONE_FREQ*t+ONE_PHASE)
+		zeroSignal[i] = AMPLITUDE * math.Sin(2*math.Pi*ZERO_FREQ*t+ZERO_PHASE)
 	}
 	// get the dot product value of oneSignal
 
@@ -251,8 +257,15 @@ func Demodulation(receivingData chan []int32, demodulatedBits chan []bool) {
 	powerDebugFile, _ := os.Create("powerDebug.bin")
 	defer powerDebugFile.Close()
 
+	correctionFlag := false
 	i := 0
 	distanceFromPotentialStart := -1
+
+	type PotentialStart struct {
+		power float64
+		index int
+	}
+	potentialHistory := make([]PotentialStart, 0)
 	for currentChunk := range receivingData {
 		for _, currentSample := range currentChunk {
 			currentSample := float64(currentSample) / math.MaxInt32
@@ -280,13 +293,14 @@ func Demodulation(receivingData chan []int32, demodulatedBits chan []bool) {
 						binary.Write(powerDebugFile, binary.LittleEndian, power)
 
 						// find a potential start of the signal
-						if power > localMaxPower && power > POWER_THRESHOLD {
+						if power > localMaxPower && power > POWER_THRESHOLD && power > powerSmooth {
 
 							fmt.Printf("[Demodulation] find a potential start of the signal at %v where power: %.2f\n", i, power)
 							// a potential start of the signal is found
 							localMaxPower = power
 							frameToDecode = frameToDecode[:0]
 							distanceFromPotentialStart = 0
+							potentialHistory = append(potentialHistory, PotentialStart{power, i})
 						}
 
 						// append the currentSample to the frameToDecode if necessary
@@ -300,6 +314,21 @@ func Demodulation(receivingData chan []int32, demodulatedBits chan []bool) {
 					} else {
 						// a real start of the signal is found
 						fmt.Printf("[Demodulation] find the start of the signal at %v where power: %.2f\n", i-distanceFromPotentialStart, localMaxPower)
+						fmt.Println("[Demodulation] potentialHistory:", potentialHistory)
+
+						// determine whether to flip
+						if len(potentialHistory) > 2 {
+							lastPotentialStart := potentialHistory[len(potentialHistory)-1]
+							secondLastPotentialStart := potentialHistory[len(potentialHistory)-2]
+							increaseRate := (lastPotentialStart.power - secondLastPotentialStart.power) / secondLastPotentialStart.power
+							deltaIndex := lastPotentialStart.index - secondLastPotentialStart.index
+							fmt.Printf("[Demodulation] increaseRate: %.2f\n", increaseRate)
+							fmt.Printf("[Demodulation] deltaIndex: %d\n", deltaIndex)
+							correctionFlag = increaseRate < 0.5
+						} else {
+							correctionFlag = false
+						}
+
 						localMaxPower = 0
 
 						// clear currentWindow
@@ -317,18 +346,22 @@ func Demodulation(receivingData chan []int32, demodulatedBits chan []bool) {
 				if len(frameToDecode) == (BIT_PER_FRAME+CRC_BITS)*SAMPLE_PER_BIT {
 
 					frameNoCarrier1 := make([]float64, len(frameToDecode))
+					frameNoCarrier0 := make([]float64, len(frameToDecode))
 					utils.WriteBinary("frameToDecode.bin", frameToDecode)
 					for j := range frameToDecode {
 						frameNoCarrier1[j] = frameToDecode[j] * oneSignal[j%SAMPLE_PER_BIT]
+						frameNoCarrier0[j] = frameToDecode[j] * zeroSignal[j%SAMPLE_PER_BIT]
 					}
 
 					frameBits := make([]bool, 0, BIT_PER_FRAME+CRC_BITS)
 					for j := 0; j < BIT_PER_FRAME+CRC_BITS; j++ {
 						valuePerBit1 := 0.0
+						valuePerBit0 := 0.0
 						for k := 0; k < SAMPLE_PER_BIT; k++ {
 							valuePerBit1 += frameNoCarrier1[j*SAMPLE_PER_BIT+k]
+							valuePerBit0 += frameNoCarrier0[j*SAMPLE_PER_BIT+k]
 						}
-						frameBits = append(frameBits, valuePerBit1 < 0)
+						frameBits = append(frameBits, (valuePerBit1 > valuePerBit0) != correctionFlag)
 					}
 
 					utils.WriteBinary("frameBits.bin", frameBits)
@@ -353,6 +386,7 @@ func Demodulation(receivingData chan []int32, demodulatedBits chan []bool) {
 
 					// frameToDecode = frameToDecode[:0]
 					state = preambleDetection
+					potentialHistory = potentialHistory[:0]
 
 				}
 			}
@@ -415,7 +449,7 @@ func main() {
 			// 	fmt.Print(boolToInt(bit), " ")
 			// }
 			// fmt.Println()
-			if i == 1000 {
+			if i == EXPECTED_TOTAL_BITS {
 				break
 			}
 		}
