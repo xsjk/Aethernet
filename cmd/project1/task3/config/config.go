@@ -26,14 +26,14 @@ import (
 // )
 
 const (
-	PREAMBLE_LENGTH     = 1000
+	PREAMBLE_LENGTH     = 200
 	PREAMBLE_START_FREQ = 6000.0
 	PREAMBLE_END_FREQ   = 12000.0
 	SAMPLE_RATE         = 48000.0
 
-	SAMPLE_PER_BIT      = 30
+	SAMPLE_PER_BIT      = 50
 	EXPECTED_TOTAL_BITS = 10000
-	BIT_PER_FRAME       = 1000
+	BIT_PER_FRAME       = 10000
 	FRAME_INTERVAL      = 10
 
 	AMPLITUDE  = 1.0
@@ -42,7 +42,7 @@ const (
 	ONE_PHASE  = 0
 	ZERO_PHASE = math.Pi
 
-	POWER_THRESHOLD = 20
+	POWER_THRESHOLD = 1
 )
 
 var Modem = modem.NaiveModem{

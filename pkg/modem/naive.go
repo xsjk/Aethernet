@@ -164,17 +164,22 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 				crcBits := frameBits[:crcBitCount]
 				dataBits := frameBits[crcBitCount:]
 				if !reflect.DeepEqual(m.CRCChecker.Calculate(dataBits), crcBits) {
-					// try flip all the bits
-					for i := range dataBits {
-						dataBits[i] = !dataBits[i]
-					}
-					for i := range crcBits {
-						crcBits[i] = !crcBits[i]
-					}
-					if !reflect.DeepEqual(m.CRCChecker.Calculate(dataBits), crcBits) {
-						fmt.Println("[Demodulation] CRC check failed after flip")
+					if !correctionFlag {
+						fmt.Println("[Demodulation] CRC check failed before flip")
 					} else {
-						fmt.Println("[Demodulation] CRC check passed after flip")
+						// Maybe we shouldn't use the correctionFlag before ?
+						for i := range dataBits {
+							dataBits[i] = !dataBits[i]
+						}
+						for i := range crcBits {
+							crcBits[i] = !crcBits[i]
+						}
+						if !reflect.DeepEqual(m.CRCChecker.Calculate(dataBits), crcBits) {
+							fmt.Println("[Demodulation] CRC check failed after flip")
+						} else {
+							// Indeed, we should not use the correctionFlag before
+							fmt.Println("[Demodulation] CRC check passed after flip")
+						}
 					}
 				} else {
 					fmt.Println("[Demodulation] CRC check passed")

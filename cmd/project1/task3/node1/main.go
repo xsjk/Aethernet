@@ -10,7 +10,7 @@ import (
 
 func main() {
 
-	inputBits, _ := utils.ReadTxt[bool]("input.txt")
+	inputBits, _ := utils.ReadTxt[bool]("INPUT.txt")
 	player := callbacks.Player{Track: config.Modem.Modulate(inputBits)}
 	asio.Session{IOHandler: player.Update}.Run()
 
