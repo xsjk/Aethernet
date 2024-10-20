@@ -1,9 +1,11 @@
-package utils
+package modem
 
-const CRC_BITS = 8
+type CRC8Checker struct {
+	Ploy uint8
+}
 
-func CalCRC8(inputBits []bool) []bool {
-	const polynomial = 0x07 // CRC-8 polynomial x^8 + x^2 + x + 1
+func (c CRC8Checker) Calculate(inputBits []bool) []bool {
+
 	var crc uint8
 
 	for i := 0; i < len(inputBits); i += 8 {
@@ -16,7 +18,7 @@ func CalCRC8(inputBits []bool) []bool {
 		crc ^= byte
 		for k := 0; k < 8; k++ {
 			if crc&0x80 != 0 {
-				crc = (crc << 1) ^ polynomial
+				crc = (crc << 1) ^ c.Ploy
 			} else {
 				crc <<= 1
 			}

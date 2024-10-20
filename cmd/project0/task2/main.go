@@ -60,7 +60,7 @@ func main() {
 	defer d.Close()
 
 	player := callbacks.Player{Track: audio}
-	recorder := callbacks.Recoder{}
+	recorder := callbacks.Recorder{}
 	d.Start(func(in, out [][]int32) {
 		recorder.Update(in, out)
 		player.Update(in, out)

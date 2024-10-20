@@ -2,6 +2,7 @@ package main
 
 import (
 	"Aethernet/internel/utils"
+	"Aethernet/pkg/modem"
 	"bufio"
 	"encoding/binary"
 	"fmt"
@@ -30,8 +31,7 @@ const (
 	ONE_PHASE  = 0
 	ZERO_PHASE = math.Pi
 
-	POWER_THRESHOLD = 50
-	CRC_BITS        = utils.CRC_BITS
+	POWER_THRESHOLD = 20,
 )
 
 var preamble []float64 = utils.GeneratePreamble(
@@ -42,6 +42,8 @@ var preamble []float64 = utils.GeneratePreamble(
 )
 
 func Modulation(modulatedData chan []int32, inputBits []bool) {
+
+	crcChecker := modem.CRC8Checker{Ploy: 0x07}
 
 	modulationDebug := make([]float64, 0)
 
@@ -76,7 +78,7 @@ func Modulation(modulatedData chan []int32, inputBits []bool) {
 		frameData = append(frameData, preamble...)
 
 		// Bits
-		crcBits := utils.CalCRC8(frameBits)
+		crcBits := crcChecker.Calculate(frameBits)
 
 		// modulate the data (inputdata + CRC8)
 		for _, bit := range frameBits {
