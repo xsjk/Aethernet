@@ -5,26 +5,6 @@ import (
 	"math"
 )
 
-// const (
-// 	PREAMBLE_LENGTH     = 10000
-// 	PREAMBLE_START_FREQ = 6000.0
-// 	PREAMBLE_END_FREQ   = 12000.0
-// 	SAMPLE_RATE         = 48000.0
-
-// 	SAMPLE_PER_BIT      = 30
-// 	EXPECTED_TOTAL_BITS = 1000
-// 	BIT_PER_FRAME       = 1000
-// 	FRAME_INTERVAL      = 0
-
-// 	AMPLITUDE  = 1.0
-// 	ONE_FREQ   = 800
-// 	ZERO_FREQ  = 1400
-// 	ONE_PHASE  = 0
-// 	ZERO_PHASE = math.Pi
-
-// 	POWER_THRESHOLD = 20
-// )
-
 const (
 	PREAMBLE_LENGTH     = 200
 	PREAMBLE_START_FREQ = 6000.0
