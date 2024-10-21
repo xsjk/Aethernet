@@ -1,6 +1,7 @@
 package modem
 
 import (
+	"Aethernet/pkg/fixed"
 	"math"
 	"reflect"
 	"testing"
@@ -72,6 +73,8 @@ var modem = NaiveModem{
 			Size:       SAMPLE_PER_BIT,
 		}.New()),
 	},
+	DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
+	CorrectionThreshold:      fixed.FromFloat(0.8),
 }
 
 func TestNaiveModem(t *testing.T) {

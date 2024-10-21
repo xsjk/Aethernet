@@ -1,11 +1,10 @@
 package modem
 
 import (
+	"Aethernet/pkg/fixed"
 	"fmt"
 	"reflect"
 )
-
-// TODO: Use FixedPoint instead of float64
 
 type NaiveModem struct {
 	Preamble []int32
@@ -17,7 +16,8 @@ type NaiveModem struct {
 
 	Carriers [2][]int32
 
-	DemodulatePowerThreshold float64
+	CorrectionThreshold      fixed.T
+	DemodulatePowerThreshold fixed.T
 }
 
 func (m *NaiveModem) Modulate(inputBits []bool) []int32 {
@@ -67,8 +67,7 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 	)
 	state := preambleDetection
 
-	powerSmooth := 0.0
-	localMaxPower := 0.0
+	localMaxPower := fixed.Zero
 	currentWindow := make([]int32, 0, len(m.Preamble))
 	frameToDecode := make([]int32, 0)
 	demodulatedBits := make([]bool, 0)
@@ -78,12 +77,11 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 	correctionFlag := false
 
 	type PotentialStart struct {
-		power float64
+		power fixed.T
 		index int
 	}
 	potentialHistory := make([]PotentialStart, 0)
 	for i, currentSample := range inputSignal {
-		powerSmooth = powerSmooth*(1-1.0/64) + (float64(currentSample)/0x7fffffff*float64(currentSample)/0x7fffffff)/64
 
 		// find the start of the signal
 		if state == preambleDetection {
@@ -94,8 +92,8 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 				power := dotProduct(currentWindow, m.Preamble)
 
 				// find a potential start of the signal
-				if power > localMaxPower && power > m.DemodulatePowerThreshold && power > powerSmooth {
-					fmt.Printf("[Demodulation] find a potential start of the signal at %v where power: %.2f\n", i, power)
+				if power > localMaxPower && power > m.DemodulatePowerThreshold {
+					fmt.Printf("[Demodulation] find a potential start of the signal at %v where power: %.2f\n", i, fixed.T(power).Float())
 					localMaxPower = power
 					frameToDecode = frameToDecode[:0]
 					distanceFromPotentialStart = 0
@@ -113,7 +111,7 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 				// a real start of the signal is found
 				if distanceFromPotentialStart >= len(m.Preamble)/2 {
 
-					fmt.Printf("[Demodulation] find the start of the signal at %v where power: %.2f\n", i-distanceFromPotentialStart, localMaxPower)
+					fmt.Printf("[Demodulation] find the start of the signal at %v where power: %.2f\n", i-distanceFromPotentialStart, fixed.T(localMaxPower).Float())
 					fmt.Println("[Demodulation] potentialHistory:", potentialHistory)
 
 					// determine whether to flip
@@ -121,12 +119,12 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 					if len(potentialHistory) > 2 {
 						lastPotentialStart := potentialHistory[len(potentialHistory)-1]
 						secondLastPotentialStart := potentialHistory[len(potentialHistory)-2]
-						increaseRate := (lastPotentialStart.power - secondLastPotentialStart.power) / secondLastPotentialStart.power
+						increaseRate := fixed.T(lastPotentialStart.power - secondLastPotentialStart.power).Div(secondLastPotentialStart.power)
 						deltaIndex := lastPotentialStart.index - secondLastPotentialStart.index
-						fmt.Printf("[Demodulation] increaseRate: %.2f\n", increaseRate)
+						fmt.Printf("[Demodulation] increaseRate: %.2f\n", fixed.T(increaseRate).Float())
 						fmt.Printf("[Demodulation] deltaIndex: %d\n", deltaIndex)
 
-						correctionFlag = increaseRate < 0.8
+						correctionFlag = increaseRate < m.CorrectionThreshold
 					}
 
 					localMaxPower = 0
@@ -143,22 +141,12 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 			crcBitCount := 8
 
 			if len(frameToDecode) == (m.BitPerFrame+crcBitCount)*samplePerBit {
-				frameNoCarrier1 := make([]float64, len(frameToDecode))
-				frameNoCarrier0 := make([]float64, len(frameToDecode))
-				for j := range frameToDecode {
-					frameNoCarrier1[j] = float64(frameToDecode[j]) / 0x7fffffff * float64(m.Carriers[1][j%samplePerBit]) / 0x7fffffff
-					frameNoCarrier0[j] = float64(frameToDecode[j]) / 0x7fffffff * float64(m.Carriers[0][j%samplePerBit]) / 0x7fffffff
-				}
 
 				frameBits := make([]bool, 0, m.BitPerFrame+crcBitCount)
 				for j := 0; j < m.BitPerFrame+crcBitCount; j++ {
-					valuePerBit1 := 0.0
-					valuePerBit0 := 0.0
-					for k := 0; k < samplePerBit; k++ {
-						valuePerBit1 += frameNoCarrier1[j*samplePerBit+k]
-						valuePerBit0 += frameNoCarrier0[j*samplePerBit+k]
-					}
-					frameBits = append(frameBits, (valuePerBit1 > valuePerBit0) != correctionFlag)
+					s1 := dotProduct(m.Carriers[1], frameToDecode[j*samplePerBit:])
+					s0 := dotProduct(m.Carriers[0], frameToDecode[j*samplePerBit:])
+					frameBits = append(frameBits, (s1 > s0) != correctionFlag)
 				}
 
 				crcBits := frameBits[:crcBitCount]
@@ -195,12 +183,16 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 	return demodulatedBits
 }
 
-func dotProduct(a, b []int32) float64 {
-	sum := 0.0
-	for i := range a {
-		sum += float64(a[i]) * float64(b[i]) / 0x7fffffff / 0x7fffffff
+// dotProduct returns the dot product of two vectors
+//
+// The input vectors are represented by two slices of int32 (fixed-point numbers with 31 fractional bits)
+// The dot product result is represented by a fixed-point number with fixed.D fractional bits
+func dotProduct(a, b []int32) fixed.T {
+	s := int64(0)
+	for i := range min(len(a), len(b)) {
+		s += (int64(a[i]) * int64(b[i])) >> 31
 	}
-	return sum
+	return fixed.T(s >> fixed.N)
 }
 
 func (m *NaiveModem) getCarrier(bit bool) []int32 {

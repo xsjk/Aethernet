@@ -1,6 +1,7 @@
 package config
 
 import (
+	"Aethernet/pkg/fixed"
 	"Aethernet/pkg/modem"
 	"math"
 )
@@ -22,7 +23,8 @@ const (
 	ONE_PHASE  = 0
 	ZERO_PHASE = math.Pi
 
-	POWER_THRESHOLD = 1
+	POWER_THRESHOLD      = 0.5
+	CORRECTION_THRESHOLD = 0.8
 )
 
 var Modem = modem.NaiveModem{
@@ -53,5 +55,6 @@ var Modem = modem.NaiveModem{
 				Size:       SAMPLE_PER_BIT,
 			}.New()),
 	},
-	DemodulatePowerThreshold: POWER_THRESHOLD,
+	DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
+	CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
 }
