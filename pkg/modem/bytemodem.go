@@ -3,13 +3,17 @@ package modem
 import (
 	"Aethernet/pkg/fixed"
 	"fmt"
-	"reflect"
 )
 
-type NaiveModem struct {
+type ByteModem interface {
+	Modulate(inputBits []byte) []int32
+	Demodulate(inputSignal []int32) []byte
+}
+
+type NaiveByteModem struct {
 	Preamble []int32
 
-	BitPerFrame   int // number of bits per frame
+	BytePerFrame  int // number of bytes per frame
 	FrameInterval int // interval between frames
 
 	CRCChecker CRC8Checker
@@ -20,30 +24,44 @@ type NaiveModem struct {
 	DemodulatePowerThreshold fixed.T
 }
 
-func (m *NaiveModem) Modulate(inputBits []bool) []int32 {
+func forEachBit(input byte, f func(bool)) {
+	for i := 0; i < 8; i++ {
+		f((input>>uint(7-i))&1 == 1)
+	}
+}
 
-	frameCount := (len(inputBits) + m.BitPerFrame - 1) / m.BitPerFrame
+func (m *NaiveByteModem) Modulate(inputBytes []byte) []int32 {
+
+	// frameCount := (len(inputBits) + m.BitPerFrame - 1) / m.BitPerFrame
+	frameCount := len(inputBytes) / m.BytePerFrame
 
 	samplePerBit := len(m.Carriers[0])
 
-	modulatedData := make([]int32, 0, frameCount*(len(m.Preamble)+(m.BitPerFrame+8)*samplePerBit+m.FrameInterval))
+	modulatedData := make([]int32, 0, frameCount*(len(m.Preamble)+(m.BytePerFrame+1)*8*samplePerBit+m.FrameInterval))
 
 	for i := 0; i < frameCount; i++ {
-		bits := inputBits[i*m.BitPerFrame : min((i+1)*m.BitPerFrame, len(inputBits))]
+		bytes := inputBytes[i*m.BytePerFrame : (i+1)*m.BytePerFrame]
 
 		// add the preamble
 		modulatedData = append(modulatedData, m.Preamble...)
 
-		// modulate CRC8
-		crcBits := m.CRCChecker.Calculate(bits)
-		for _, bit := range crcBits {
-			modulatedData = append(modulatedData, m.getCarrier(bit)...)
-		}
-
 		// modulate the data
-		for _, bit := range bits {
-			modulatedData = append(modulatedData, m.getCarrier(bit)...)
+		m.CRCChecker.Reset()
+		for _, b := range bytes {
+			m.CRCChecker.Update(b)
+			forEachBit(b, func(bit bool) {
+				modulatedData = append(modulatedData, m.getCarrier(bit)...)
+			})
 		}
+		crcByte := m.CRCChecker.Get()
+
+		// modulate the CRC8 byte
+		forEachBit(crcByte, func(bit bool) {
+			modulatedData = append(modulatedData, m.getCarrier(bit)...)
+		})
+
+		fmt.Println("[Modulation] CRC8:", ByteToBool([]byte{crcByte}))
+
 		// add the interval
 		for j := 0; j < m.FrameInterval; j++ {
 			modulatedData = append(modulatedData, 0)
@@ -55,7 +73,7 @@ func (m *NaiveModem) Modulate(inputBits []bool) []int32 {
 
 }
 
-func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
+func (m *NaiveByteModem) Demodulate(inputSignal []int32) []byte {
 
 	samplePerBit := len(m.Carriers[0])
 
@@ -70,7 +88,7 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 	localMaxPower := fixed.Zero
 	currentWindow := make([]int32, 0, len(m.Preamble))
 	frameToDecode := make([]int32, 0)
-	demodulatedBits := make([]bool, 0)
+	demodulatedBytes := make([]byte, 0)
 
 	distanceFromPotentialStart := -1
 
@@ -109,14 +127,14 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 				}
 
 				// a real start of the signal is found
-				if distanceFromPotentialStart >= len(m.Preamble)/2 {
+				if distanceFromPotentialStart >= len(m.Preamble) {
 
 					fmt.Printf("[Demodulation] find the start of the signal at %v where power: %.2f\n", i-distanceFromPotentialStart, fixed.T(localMaxPower).Float())
 					fmt.Println("[Demodulation] potentialHistory:", potentialHistory)
 
 					// determine whether to flip
 					correctionFlag = false
-					if len(potentialHistory) > 2 {
+					if len(potentialHistory) > 1 {
 						lastPotentialStart := potentialHistory[len(potentialHistory)-1]
 						secondLastPotentialStart := potentialHistory[len(potentialHistory)-2]
 						increaseRate := fixed.T(lastPotentialStart.power - secondLastPotentialStart.power).Div(secondLastPotentialStart.power)
@@ -125,7 +143,11 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 						fmt.Printf("[Demodulation] deltaIndex: %d\n", deltaIndex)
 
 						correctionFlag = increaseRate < m.CorrectionThreshold
+					} else {
+						fmt.Println("[Demodulation] not enough potentialHistory to determine correction, you may decrease the POWER_THRESHOLD")
 					}
+
+					fmt.Printf("[Demodulation] correctionFlag: %v\n", correctionFlag)
 
 					localMaxPower = 0
 					currentWindow = currentWindow[:0]
@@ -138,31 +160,36 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 		if state == dataExtraction {
 			frameToDecode = append(frameToDecode, currentSample)
 
-			crcBitCount := 8
+			if len(frameToDecode) == (m.BytePerFrame+1)*8*samplePerBit {
 
-			if len(frameToDecode) == (m.BitPerFrame+crcBitCount)*samplePerBit {
-
-				frameBits := make([]bool, 0, m.BitPerFrame+crcBitCount)
-				for j := 0; j < m.BitPerFrame+crcBitCount; j++ {
+				frameBytes := make([]byte, 0, m.BytePerFrame)
+				var b BitSet8
+				for j := 0; j < (m.BytePerFrame+1)*8; j++ {
 					s1 := dotProduct(m.Carriers[1], frameToDecode[j*samplePerBit:])
 					s0 := dotProduct(m.Carriers[0], frameToDecode[j*samplePerBit:])
-					frameBits = append(frameBits, (s1 > s0) != correctionFlag)
+					if (s1 > s0) != correctionFlag {
+						b.Set(7 - j%8)
+					}
+
+					if (j % 8) == 7 {
+						frameBytes = append(frameBytes, b.ToByte())
+					}
 				}
 
-				crcBits := frameBits[:crcBitCount]
-				dataBits := frameBits[crcBitCount:]
-				if !reflect.DeepEqual(m.CRCChecker.Calculate(dataBits), crcBits) {
+				dataBytes := frameBytes[:m.BytePerFrame]
+				crcByte := frameBytes[m.BytePerFrame]
+
+				if !(m.CRCChecker.Check(dataBytes, crcByte)) {
 					if !correctionFlag {
 						fmt.Println("[Demodulation] CRC check failed before flip")
 					} else {
 						// Maybe we shouldn't use the correctionFlag before ?
-						for i := range dataBits {
-							dataBits[i] = !dataBits[i]
+						for i := range dataBytes {
+							dataBytes[i] = ^dataBytes[i]
 						}
-						for i := range crcBits {
-							crcBits[i] = !crcBits[i]
-						}
-						if !reflect.DeepEqual(m.CRCChecker.Calculate(dataBits), crcBits) {
+						crcByte = ^crcByte
+
+						if !m.CRCChecker.Check(dataBytes, crcByte) {
 							fmt.Println("[Demodulation] CRC check failed after flip")
 						} else {
 							// Indeed, we should not use the correctionFlag before
@@ -172,7 +199,7 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 				} else {
 					fmt.Println("[Demodulation] CRC check passed")
 				}
-				demodulatedBits = append(demodulatedBits, dataBits...)
+				demodulatedBytes = append(demodulatedBytes, dataBytes...)
 
 				state = preambleDetection
 				potentialHistory = potentialHistory[:0]
@@ -180,22 +207,10 @@ func (m *NaiveModem) Demodulate(inputSignal []int32) []bool {
 		}
 	}
 
-	return demodulatedBits
+	return demodulatedBytes
 }
 
-// dotProduct returns the dot product of two vectors
-//
-// The input vectors are represented by two slices of int32 (fixed-point numbers with 31 fractional bits)
-// The dot product result is represented by a fixed-point number with fixed.D fractional bits
-func dotProduct(a, b []int32) fixed.T {
-	s := int64(0)
-	for i := range min(len(a), len(b)) {
-		s += (int64(a[i]) * int64(b[i])) >> 31
-	}
-	return fixed.T(s >> fixed.N)
-}
-
-func (m *NaiveModem) getCarrier(bit bool) []int32 {
+func (m *NaiveByteModem) getCarrier(bit bool) []int32 {
 	if bit {
 		return m.Carriers[1]
 	} else {

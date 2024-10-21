@@ -14,8 +14,8 @@ const (
 
 	SAMPLE_PER_BIT      = 50
 	EXPECTED_TOTAL_BITS = 10000
-	BIT_PER_FRAME       = 10000
-	FRAME_INTERVAL      = 10
+	BIT_PER_FRAME       = 1000
+	FRAME_INTERVAL      = 0
 
 	AMPLITUDE  = 1.0
 	ONE_FREQ   = 800
@@ -23,11 +23,11 @@ const (
 	ONE_PHASE  = 0
 	ZERO_PHASE = math.Pi
 
-	POWER_THRESHOLD      = 0.5
+	POWER_THRESHOLD      = 4
 	CORRECTION_THRESHOLD = 0.8
 )
 
-var Modem = modem.NaiveModem{
+var Modem = modem.NaiveBitModem{
 	Preamble: modem.Float64ToInt32(modem.PreambleParams{
 		MinFreq:    PREAMBLE_START_FREQ,
 		MaxFreq:    PREAMBLE_END_FREQ,
@@ -36,7 +36,7 @@ var Modem = modem.NaiveModem{
 	}.New()),
 	BitPerFrame:   BIT_PER_FRAME,
 	FrameInterval: FRAME_INTERVAL,
-	CRCChecker:    modem.CRC8Checker{Ploy: 0x07},
+	CRCChecker:    modem.MakeCRC8Checker(0x07),
 	Carriers: [2][]int32{
 		modem.Float64ToInt32(
 			modem.CarrierParams{

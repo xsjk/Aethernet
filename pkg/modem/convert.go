@@ -17,3 +17,25 @@ func Float64ToInt32(input []float64) []int32 {
 	}
 	return output
 }
+
+// Convert []bool to []byte
+func BoolToByte(input []bool) []byte {
+	output := make([]byte, (len(input)+7)/8)
+	for i, v := range input {
+		if v {
+			output[i/8] |= 1 << (7 - i%8)
+		}
+	}
+	return output
+}
+
+// Convert []byte to []bool
+func ByteToBool(input []byte) []bool {
+	output := make([]bool, len(input)*8)
+	for i, v := range input {
+		for j := 0; j < 8; j++ {
+			output[i*8+j] = (v>>uint(7-j))&1 == 1
+		}
+	}
+	return output
+}
