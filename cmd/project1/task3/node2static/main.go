@@ -12,7 +12,7 @@ func main() {
 		panic(err)
 	}
 	println("[Debug] Read recorded data from recorder.bin", "length:", len(track))
-	outputBits := config.Modem.Demodulate(track)
+	outputBits := config.BitModem.Demodulate(track)
 	println("[Debug] Demodulated data length:", len(outputBits))
 	utils.WriteBinary("output.bin", outputBits)
 	utils.WriteTxt("OUTPUT.txt", outputBits, func(bit bool) int {

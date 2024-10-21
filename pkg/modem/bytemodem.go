@@ -6,7 +6,7 @@ import (
 )
 
 type ByteModem interface {
-	Modulate(inputBits []byte) []int32
+	Modulate(inputBytes []byte) []int32
 	Demodulate(inputSignal []int32) []byte
 }
 
@@ -70,7 +70,6 @@ func (m *NaiveByteModem) Modulate(inputBytes []byte) []int32 {
 	}
 
 	return modulatedData
-
 }
 
 func (m *NaiveByteModem) Demodulate(inputSignal []int32) []byte {

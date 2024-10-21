@@ -15,7 +15,7 @@ func main() {
 	utils.WriteBinary("recorder.bin", recorder.Track)
 
 	track, _ := utils.ReadBinary[int32]("recorder.bin")
-	outputBits := config.Modem.Demodulate(track)
+	outputBits := config.BitModem.Demodulate(track)
 	utils.WriteBinary("output.bin", outputBits)
 	utils.WriteTxt("OUTPUT.txt", outputBits, func(bit bool) int {
 		if bit {

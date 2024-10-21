@@ -14,7 +14,7 @@ func main() {
 	player := callbacks.Player{}
 	recorder := callbacks.Recorder{Track: make([]int32, 0, config.EXPECTED_TOTAL_BITS)}
 
-	utils.WriteBinary("preamble.bin", config.Modem.Preamble)
+	utils.WriteBinary("preamble.bin", config.BitModem.Preamble)
 
 	{
 		inputBits, err := utils.ReadTxt[bool]("INPUT.txt")
@@ -23,7 +23,7 @@ func main() {
 		} else {
 			fmt.Println("[Debug] Read input data from INPUT.txt", "length:", len(inputBits))
 		}
-		modulatedData := config.Modem.Modulate(inputBits)
+		modulatedData := config.BitModem.Modulate(inputBits)
 		fmt.Println("[Debug] Modulated data length:", len(modulatedData))
 		// add some zero padding before sending
 		player.Track = append(make([]int32, config.SAMPLE_RATE), modulatedData...)
@@ -38,7 +38,7 @@ func main() {
 
 	{
 		track, _ := utils.ReadBinary[int32]("recorder.bin")
-		outputBits := config.Modem.Demodulate(track)
+		outputBits := config.BitModem.Demodulate(track)
 		utils.WriteBinary("output.bin", outputBits)
 		utils.WriteTxt("OUTPUT.txt", outputBits, func(bit bool) int {
 			if bit {

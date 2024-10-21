@@ -17,7 +17,7 @@ func main() {
 	} else {
 		fmt.Println("[Debug] Read input data from INPUT.txt", "length:", len(inputBits))
 	}
-	modulatedData := config.Modem.Modulate(inputBits)
+	modulatedData := config.BitModem.Modulate(inputBits)
 	fmt.Println("[Debug] Modulated data length:", len(modulatedData))
 	// add some zero padding before sending
 	zeros := make([]int32, 10000)
