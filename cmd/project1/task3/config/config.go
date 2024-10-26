@@ -59,17 +59,6 @@ var BitModem = modem.NaiveBitModem{
 	Preamble:                 preamble,
 	BitPerFrame:              BIT_PER_FRAME,
 	FrameInterval:            FRAME_INTERVAL,
-	CRCChecker:               modem.MakeCRC8Checker(0x07),
-	Carriers:                 carriers,
-	DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
-	CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
-}
-
-var ByteModem = modem.NaiveByteModem{
-	Preamble:                 preamble,
-	BytePerFrame:             BYTE_PER_FRAME,
-	FrameInterval:            FRAME_INTERVAL,
-	CRCChecker:               modem.MakeCRC8Checker(0x07),
 	Carriers:                 carriers,
 	DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
 	CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),

@@ -13,13 +13,12 @@ type BitModem interface {
 
 type NaiveBitModem struct {
 	Preamble []int32
+	Carriers [2][]int32
 
 	BitPerFrame   int // number of bits per frame
 	FrameInterval int // interval between frames
 
-	CRCChecker CRC8Checker
-
-	Carriers [2][]int32
+	crcChecker CRC8Checker
 
 	CorrectionThreshold      fixed.T
 	DemodulatePowerThreshold fixed.T
@@ -40,7 +39,7 @@ func (m *NaiveBitModem) Modulate(inputBits []bool) []int32 {
 		modulatedData = append(modulatedData, m.Preamble...)
 
 		// modulate CRC8
-		crcBits := m.CRCChecker.CalculateBits(bits)
+		crcBits := m.crcChecker.CalculateBits(bits)
 		fmt.Println("[Modulation] CRC8:", crcBits)
 		for _, bit := range crcBits {
 			modulatedData = append(modulatedData, m.getCarrier(bit)...)
@@ -161,7 +160,7 @@ func (m *NaiveBitModem) Demodulate(inputSignal []int32) []bool {
 
 				crcBits := frameBits[:crcBitCount]
 				dataBits := frameBits[crcBitCount:]
-				if !reflect.DeepEqual(m.CRCChecker.CalculateBits(dataBits), crcBits) {
+				if !reflect.DeepEqual(m.crcChecker.CalculateBits(dataBits), crcBits) {
 					if !correctionFlag {
 						fmt.Println("[Demodulation] CRC check failed before flip")
 					} else {
@@ -172,7 +171,7 @@ func (m *NaiveBitModem) Demodulate(inputSignal []int32) []bool {
 						for i := range crcBits {
 							crcBits[i] = !crcBits[i]
 						}
-						if !reflect.DeepEqual(m.CRCChecker.CalculateBits(dataBits), crcBits) {
+						if !reflect.DeepEqual(m.crcChecker.CalculateBits(dataBits), crcBits) {
 							fmt.Println("[Demodulation] CRC check failed after flip")
 						} else {
 							// Indeed, we should not use the correctionFlag before

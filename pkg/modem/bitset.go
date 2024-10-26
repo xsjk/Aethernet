@@ -1,80 +1,29 @@
 package modem
 
-import (
-	"strings"
-)
+import "golang.org/x/exp/constraints"
 
-type BitSet struct {
-	bits []uint64
-	size int
+type bitSet[T constraints.Integer] struct {
+	Value T
 }
 
-func NewBitSet(size int) *BitSet {
-	return &BitSet{
-		bits: make([]uint64, (size+63)/64),
-		size: size,
+func BitSet[T constraints.Integer](value T) bitSet[T] {
+	return bitSet[T]{Value: value}
+}
+
+func (b *bitSet[T]) Set(bit int) {
+	b.Value |= (1 << bit)
+}
+
+func (b *bitSet[T]) Clear(bit int) {
+	b.Value &^= (1 << bit)
+}
+
+func (b bitSet[T]) IsSet(bit int) bool {
+	return b.Value&(1<<bit) != 0
+}
+
+func (b bitSet[T]) ForEach(f func(bool), n int) {
+	for i := 0; i < n; i++ {
+		f((b.Value & (1 << uint(i))) != 0)
 	}
-}
-
-func (b *BitSet) Set(pos int) {
-	if pos >= b.size {
-		return
-	}
-	b.bits[pos/64] |= 1 << (pos % 64)
-}
-
-func (b *BitSet) Clear(pos int) {
-	if pos >= b.size {
-		return
-	}
-	b.bits[pos/64] &^= 1 << (pos % 64)
-}
-
-func (b *BitSet) IsSet(pos int) bool {
-	if pos >= b.size {
-		return false
-	}
-	return b.bits[pos/64]&(1<<(pos%64)) != 0
-}
-
-func (b *BitSet) String() string {
-	var sb strings.Builder
-	for i := 0; i < b.size; i++ {
-		if b.IsSet(i) {
-			sb.WriteByte('1')
-		} else {
-			sb.WriteByte('0')
-		}
-	}
-	return sb.String()
-}
-
-type BitSet8 byte
-
-func (b *BitSet8) Set(pos int) {
-	*b |= 1 << pos
-}
-
-func (b *BitSet8) Clear(pos int) {
-	*b &^= 1 << pos
-}
-
-func (b *BitSet8) IsSet(pos int) bool {
-	return *b&(1<<pos) != 0
-}
-
-func (b *BitSet8) String() string {
-	var sb strings.Builder
-	for i := 0; i < 8; i++ {
-		if b.IsSet(i) {
-			sb.WriteByte('1')
-		} else {
-			sb.WriteByte('0')
-		}
-	}
-	return sb.String()
-}
-
-func (b BitSet8) ToByte() byte {
-	return byte(b)
 }

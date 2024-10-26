@@ -1,16 +1,13 @@
 package modem
 
-type CRC8Checker struct {
-	gen  uint8
-	prod [256]uint8
+type CRC8Checker uint8
 
-	q uint8
-}
+const gen = 0x07
 
-func MakeCRC8Checker(gen uint8) CRC8Checker {
+var prod = func() [256]uint8 {
 	prod := [256]uint8{}
 
-	for i := 0; i < 256; i++ {
+	for i := range prod {
 		crc := uint8(i)
 		for j := 0; j < 8; j++ {
 			if crc&0x80 != 0 {
@@ -19,25 +16,21 @@ func MakeCRC8Checker(gen uint8) CRC8Checker {
 				crc <<= 1
 			}
 		}
-		prod[i] = uint8(crc)
+		prod[i] = crc
 	}
-
-	return CRC8Checker{
-		gen:  gen,
-		prod: prod,
-	}
-}
+	return prod
+}()
 
 func (c *CRC8Checker) Reset() {
-	c.q = 0
+	*c = 0
 }
 
 func (c *CRC8Checker) Update(b byte) {
-	c.q = c.prod[c.q^b]
+	*c = CRC8Checker(prod[byte(*c)^b])
 }
 
 func (c CRC8Checker) Get() byte {
-	return c.q
+	return byte(c)
 }
 
 func (c CRC8Checker) Calculate(inputBytes []byte) byte {
@@ -45,7 +38,7 @@ func (c CRC8Checker) Calculate(inputBytes []byte) byte {
 	for _, b := range inputBytes {
 		c.Update(b)
 	}
-	return c.q
+	return byte(c)
 }
 
 func (c CRC8Checker) Check(inputBytes []byte, crc byte) bool {
@@ -68,7 +61,7 @@ func (c CRC8Checker) CalculateBits(inputBits []bool) []bool {
 
 	crcBits := make([]bool, 0, 8)
 	for i := 7; i >= 0; i-- {
-		crcBits = append(crcBits, ((int(c.q)>>i)&1) == 1)
+		crcBits = append(crcBits, ((byte(c)>>i)&1) == 1)
 	}
 	return crcBits
 }

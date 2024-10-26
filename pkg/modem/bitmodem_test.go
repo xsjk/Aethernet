@@ -39,7 +39,6 @@ func TestNaiveBitModem(t *testing.T) {
 		}.New()),
 		BitPerFrame:   BIT_PER_FRAME,
 		FrameInterval: FRAME_INTERVAL,
-		CRCChecker:    MakeCRC8Checker(0x07),
 		Carriers: [2][]int32{
 			Float64ToInt32(CarrierParams{
 				Amplitude:  AMPLITUDE,
