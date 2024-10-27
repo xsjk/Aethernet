@@ -46,7 +46,7 @@ type Demodulator struct {
 
 	CorrectionThreshold      fixed.T
 	DemodulatePowerThreshold fixed.T
-	OutputChan               chan []byte
+	OutputChan               chan []byte // demodulated data
 
 	once sync.Once
 
@@ -100,7 +100,7 @@ func (d *Demodulator) Reset() {
 	d.sum = fixed.Zero
 }
 
-func (m *Modulator) Modulate(inputBytes []byte) []int32 {
+func (m Modulator) Modulate(inputBytes []byte) []int32 {
 
 	frameCount := (len(inputBytes) + m.BytePerFrame - 1) / m.BytePerFrame
 	samplePerBit := m.CarrierSize

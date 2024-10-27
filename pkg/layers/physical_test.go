@@ -3,6 +3,8 @@ package layer
 import (
 	"Aethernet/pkg/fixed"
 	"Aethernet/pkg/modem"
+	"crypto/rand"
+	"reflect"
 	"testing"
 )
 
@@ -15,6 +17,9 @@ func TestPhysicalLayer(t *testing.T) {
 		INTERVAL_SIZE  = 10
 		PAYLOAD_SIZE   = 32
 
+		INPUT_BUFFER_SIZE  = 10000
+		OUTPUT_BUFFER_SIZE = 1
+
 		POWER_THRESHOLD      = 30
 		CORRECTION_THRESHOLD = 0.8
 	)
@@ -22,37 +27,40 @@ func TestPhysicalLayer(t *testing.T) {
 	var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
 
 	var physicalLayer = PhysicalLayer{
-		device: &LoopbackDevice{},
-		decoder: Decoder{
-			demodulator: modem.Demodulator{
+		Device: &LoopbackDevice{},
+		Decoder: Decoder{
+			Demodulator: modem.Demodulator{
 				Preamble:                 preamble,
 				CarrierSize:              CARRIER_SIZE,
 				CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
 				DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
 				OutputChan:               make(chan []byte, 10),
 			},
+			BufferSize: INPUT_BUFFER_SIZE,
 		},
-		encoder: Encoder{
-			modulator: modem.Modulator{
+		Encoder: Encoder{
+			Modulator: modem.Modulator{
 				Preamble:      preamble,
 				CarrierSize:   CARRIER_SIZE,
 				BytePerFrame:  BYTE_PER_FRAME,
 				FrameInterval: FRAME_INTERVAL,
 			},
-			outputBuffer: make(chan []int32, 10),
+			BufferSize: OUTPUT_BUFFER_SIZE,
 		},
 	}
 
 	physicalLayer.Open()
 
-	physicalLayer.Send([]byte("Hello, World!"))
+	inputBytes := make([]byte, 1000)
+	rand.Read(inputBytes)
+
+	physicalLayer.Send(inputBytes)
 
 	output := physicalLayer.Receive()
 
-	if string(output) != "Hello, World!" {
-		t.Errorf("Expected 'Hello, World!', but got '%s'", string(output))
-	} else {
-		t.Logf("Received: %s", string(output))
+	t.Logf("len(inputBytes) = %d, len(output) = %d", len(inputBytes), len(output))
+	if !reflect.DeepEqual(inputBytes, output) {
+		t.Errorf("inputBytes and outputBytes are different")
 	}
 
 	physicalLayer.Close()

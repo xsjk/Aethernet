@@ -1,6 +1,10 @@
 package layer
 
-import "github.com/xsjk/go-asio"
+import (
+	"time"
+
+	"github.com/xsjk/go-asio"
+)
 
 type Device interface {
 	Start(callback func([][]int32, [][]int32))
@@ -27,7 +31,8 @@ func (a *ASIODevice) Stop() {
 }
 
 type LoopbackDevice struct {
-	done chan struct{}
+	SampleRate float64 // the fake sample rate, 0 means no limit
+	done       chan struct{}
 }
 
 func (d *LoopbackDevice) Start(callback func([][]int32, [][]int32)) {
@@ -38,18 +43,33 @@ func (d *LoopbackDevice) Start(callback func([][]int32, [][]int32)) {
 		buf[1] = make([]int32, 512)
 
 		swap := true
-		for {
+		update := func() {
+			if swap {
+				callback(buf[:1], buf[1:])
+			} else {
+				callback(buf[1:], buf[:1])
+			}
+			swap = !swap
+		}
 
-			select {
-			case <-d.done:
-				return
-			default:
-				if swap {
-					callback(buf[:1], buf[1:])
-				} else {
-					callback(buf[1:], buf[:1])
+		if d.SampleRate == 0 {
+			for {
+				select {
+				case <-d.done:
+					return
+				default:
+					update()
 				}
-				swap = !swap
+			}
+		} else {
+			ticker := time.NewTicker(time.Second / time.Duration(d.SampleRate))
+			for {
+				select {
+				case <-d.done:
+					return
+				case <-ticker.C:
+					update()
+				}
 			}
 		}
 	}()

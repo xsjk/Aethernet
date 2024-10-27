@@ -12,8 +12,14 @@ func TestLoopbackDevice(t *testing.T) {
 
 	lastOutput := make([]int32, 512)
 
-	dev := &LoopbackDevice{}
+	dev := &LoopbackDevice{
+		SampleRate: 48000,
+	}
+
+	i := 0
 	dev.Start(func(in, out [][]int32) {
+		t.Logf("i = %d", i)
+		i++
 		if !reflect.DeepEqual(in[0], lastOutput) {
 			t.Errorf("Expected %v, but got %v", lastOutput, in[0])
 		}
@@ -23,6 +29,6 @@ func TestLoopbackDevice(t *testing.T) {
 		copy(lastOutput, out[0])
 	})
 
-	time.Sleep(time.Nanosecond)
+	time.Sleep(time.Millisecond)
 	dev.Stop()
 }

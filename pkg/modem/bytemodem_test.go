@@ -42,7 +42,7 @@ func TestNaiveByteModem(t *testing.T) {
 	rand.Read(inputBytes)
 
 	modulatedData := modem.Modulate(inputBytes)
-	modem.Demodulate(modulatedData)
+	go modem.Demodulate(modulatedData)
 	outputBytes := <-modem.Demodulator.OutputChan
 
 	if !reflect.DeepEqual(inputBytes, outputBytes) {
