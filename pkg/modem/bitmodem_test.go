@@ -5,6 +5,8 @@ import (
 	"math"
 	"reflect"
 	"testing"
+
+	"golang.org/x/exp/rand"
 )
 
 func TestNaiveBitModem(t *testing.T) {
@@ -61,7 +63,7 @@ func TestNaiveBitModem(t *testing.T) {
 
 	inputBits := make([]bool, EXPECTED_TOTAL_BITS)
 	for i := 0; i < EXPECTED_TOTAL_BITS; i++ {
-		inputBits[i] = i%2 == 1
+		inputBits[i] = rand.Intn(2) == 1
 	}
 
 	modulatedData := modem.Modulate(inputBits)

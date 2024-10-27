@@ -78,19 +78,26 @@ type Demodulator struct {
 	sum                 fixed.T // sum of the product of the current sample and the current carrier
 }
 
-func (d *Demodulator) Init() {
+func (d *Demodulator) Reset() {
 	d.demodulateState = preambleDetection
 
 	d.currentWindow = make([]int32, 0)
+	d.frameToDecode = make([]int32, 0)
 	d.localMaxPower = fixed.Zero
 	d.distanceFromPotentialStart = -1
 	d.potentialHistory = make([]fixed.T, 0)
 	d.correctionFlag = false
 
-	d.frameToDecode = make([]int32, 0)
 	d.crcChecker.Reset()
 	d.currentBits.data.Value = 0
 	d.currentBits.count = 0
+	d.currentHeader.done = false
+	d.currentHeader.size = 0
+	d.currentChunk = make([]byte, 0)
+	d.currentPacket = make([]byte, 0)
+	d.dataExtractionState = receiveHeader
+	d.carrierTick = 0
+	d.sum = fixed.Zero
 }
 
 func (m *Modulator) Modulate(inputBytes []byte) []int32 {
@@ -147,7 +154,7 @@ func (m *Modulator) Modulate(inputBytes []byte) []int32 {
 }
 
 func (d *Demodulator) Demodulate(inputSignal []int32) {
-	d.once.Do(d.Init)
+	d.once.Do(d.Reset)
 
 	for i, currentSample := range inputSignal {
 		debugIndex = i
@@ -320,5 +327,4 @@ func (d *Demodulator) receiveCRC(currentSample byte) {
 	d.dataExtractionState = receiveHeader
 	d.currentHeader.done = false
 	d.currentHeader.size = 0
-
 }

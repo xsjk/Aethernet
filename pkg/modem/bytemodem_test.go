@@ -2,6 +2,7 @@ package modem
 
 import (
 	"Aethernet/pkg/fixed"
+	"crypto/rand"
 	"reflect"
 	"testing"
 )
@@ -21,32 +22,28 @@ func TestNaiveByteModem(t *testing.T) {
 
 	var preamble = DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
 
-	var outputChan = make(chan []byte, 10)
-
 	var modem = NaiveByteModem{
-		Modulator{
+		Modulator: Modulator{
 			Preamble:      preamble,
 			CarrierSize:   CARRIER_SIZE,
 			BytePerFrame:  BYTE_PER_FRAME,
 			FrameInterval: FRAME_INTERVAL,
 		},
-		Demodulator{
+		Demodulator: Demodulator{
 			Preamble:                 preamble,
 			CarrierSize:              CARRIER_SIZE,
 			CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
 			DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
-			OutputChan:               outputChan,
+			OutputChan:               make(chan []byte, 10),
 		},
 	}
 
 	inputBytes := make([]byte, 1000)
-	for i := range inputBytes {
-		inputBytes[i] = 0b01010101
-	}
+	rand.Read(inputBytes)
 
 	modulatedData := modem.Modulate(inputBytes)
 	modem.Demodulate(modulatedData)
-	outputBytes := <-outputChan
+	outputBytes := <-modem.Demodulator.OutputChan
 
 	if !reflect.DeepEqual(inputBytes, outputBytes) {
 		t.Errorf("inputBytes and outputBytes are different")
