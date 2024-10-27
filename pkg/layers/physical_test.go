@@ -54,7 +54,7 @@ func TestPhysicalLayer(t *testing.T) {
 	inputBytes := make([]byte, 1000)
 	rand.Read(inputBytes)
 
-	physicalLayer.Send(inputBytes)
+	go physicalLayer.Send(inputBytes)
 
 	output := physicalLayer.Receive()
 
