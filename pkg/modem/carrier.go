@@ -2,7 +2,7 @@ package modem
 
 import "math"
 
-type CarrierParams struct {
+type CarrierConfig struct {
 	Amplitude  float64
 	Freq       float64
 	Phase      float64
@@ -10,7 +10,7 @@ type CarrierParams struct {
 	Size       int
 }
 
-func (p CarrierParams) New() []float64 {
+func (p CarrierConfig) New() []float64 {
 	signal := make([]float64, p.Size)
 	for i := 0; i < p.Size; i++ {
 		t := float64(i) / p.SampleRate

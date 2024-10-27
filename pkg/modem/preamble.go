@@ -13,14 +13,14 @@ func chirp(out *[]float64, startFreq, endFreq float64, length int, sampleRate fl
 	}
 }
 
-type PreambleParams struct {
+type ChripConfig struct {
 	MinFreq    float64
 	MaxFreq    float64
 	Length     int
 	SampleRate float64
 }
 
-func (p PreambleParams) New() []float64 {
+func (p ChripConfig) New() []float64 {
 	preamble := make([]float64, 0, p.Length)
 
 	chirp(&preamble, p.MinFreq, p.MaxFreq, p.Length/2, p.SampleRate)
@@ -29,11 +29,29 @@ func (p PreambleParams) New() []float64 {
 	return preamble
 }
 
-func MakePreamble(minFreq, maxFreq float64, length int, sampleRate float64) []float64 {
-	return PreambleParams{
-		MinFreq:    minFreq,
-		MaxFreq:    maxFreq,
-		Length:     length,
-		SampleRate: sampleRate,
-	}.New()
+type DigitalChripConfig struct {
+	N         int
+	Amplitude int32
+}
+
+func (p DigitalChripConfig) New() []int32 {
+	var preamble []int32
+
+	var repeat = func(n int, v int32) {
+		for range n {
+			preamble = append(preamble, v)
+		}
+	}
+
+	for i := 1; i <= p.N; i++ {
+		repeat(i, p.Amplitude)
+		repeat(i, -p.Amplitude)
+	}
+
+	for i := p.N; i >= 1; i-- {
+		repeat(i, p.Amplitude)
+		repeat(i, -p.Amplitude)
+	}
+
+	return preamble
 }

@@ -61,12 +61,12 @@ type Demodulator struct {
 	correctionFlag             bool
 
 	// data extraction
-	crcChecker   CRC8Checker
-	rDataEncoded struct {
+	crcChecker  CRC8Checker
+	currentBits struct {
 		data  bitSet[uint16]
 		count int
 	}
-	header struct {
+	currentHeader struct {
 		done bool
 		size int
 	}
@@ -75,8 +75,7 @@ type Demodulator struct {
 
 	dataExtractionState DataExtractionStateEnum
 	carrierTick         int     // the current carrier tick [0, len(carrier)]
-	sum1                fixed.T // sum of the product of the current sample and the current carrier
-	sum                 fixed.T
+	sum                 fixed.T // sum of the product of the current sample and the current carrier
 }
 
 func (d *Demodulator) Init() {
@@ -90,8 +89,8 @@ func (d *Demodulator) Init() {
 
 	d.frameToDecode = make([]int32, 0)
 	d.crcChecker.Reset()
-	d.rDataEncoded.data.Value = 0
-	d.rDataEncoded.count = 0
+	d.currentBits.data.Value = 0
+	d.currentBits.count = 0
 }
 
 func (m *Modulator) Modulate(inputBytes []byte) []int32 {
@@ -219,8 +218,8 @@ func (d *Demodulator) detectPreamble(currentSample int32) {
 		d.currentWindow = d.currentWindow[:0]
 		d.distanceFromPotentialStart = -1
 		d.demodulateState = dataExtraction
-		d.rDataEncoded.data.Value = 0
-		d.rDataEncoded.count = 0
+		d.currentBits.data.Value = 0
+		d.currentBits.count = 0
 		for _, sample := range d.frameToDecode {
 			if d.demodulateState == dataExtraction {
 				d.extractData(sample)
@@ -241,33 +240,32 @@ func (d *Demodulator) extractData(currentSample int32) {
 		return
 	}
 
-	if d.rDataEncoded.count >= 16 {
+	if d.currentBits.count >= 16 {
 		panic("Data is too long")
 	}
 
 	if d.sum < 0 {
-		d.rDataEncoded.data.Set(d.rDataEncoded.count)
+		d.currentBits.data.Set(d.currentBits.count)
 	}
-	d.rDataEncoded.count += 1
+	d.currentBits.count += 1
 
 	d.sum = 0
-	d.sum1 = 0
 	d.carrierTick = 0
 
-	if d.rDataEncoded.count < 10 {
+	if d.currentBits.count < 10 {
 		return
 	}
 
-	currentByte, exists := B10B8[d.rDataEncoded.data.Value]
+	currentByte, exists := B10B8[d.currentBits.data.Value]
 	if !exists {
-		fmt.Printf("[Demodulation] Warning: B10B8 does not contain key %v\n", d.rDataEncoded.data.Value)
-		d.rDataEncoded.data.Value = 0
-		d.rDataEncoded.count = 0
+		fmt.Printf("[Demodulation] Warning: B10B8 does not contain key %v\n", d.currentBits.data.Value)
+		d.currentBits.data.Value = 0
+		d.currentBits.count = 0
 		d.demodulateState = preambleDetection
 		return
 	}
-	d.rDataEncoded.data.Value = 0
-	d.rDataEncoded.count = 0
+	d.currentBits.data.Value = 0
+	d.currentBits.count = 0
 
 	switch d.dataExtractionState {
 	case receiveHeader:
@@ -280,10 +278,10 @@ func (d *Demodulator) extractData(currentSample int32) {
 }
 
 func (d *Demodulator) receiveHeader(currentSample byte) {
-	d.header.done = currentSample&0b10000000 != 0
-	d.header.size = int(currentSample & 0b01111111)
+	d.currentHeader.done = currentSample&0b10000000 != 0
+	d.currentHeader.size = int(currentSample & 0b01111111)
 
-	if d.header.size == 0 { // invalid packet
+	if d.currentHeader.size == 0 { // invalid packet
 		fmt.Println("[Demodulation] Warning: header.size is 0, invalid packet")
 		d.demodulateState = preambleDetection
 		return
@@ -300,7 +298,7 @@ func (d *Demodulator) receiveHeader(currentSample byte) {
 func (d *Demodulator) receiveData(currentSample byte) {
 	d.currentChunk = append(d.currentChunk, currentSample)
 	d.crcChecker.Update(currentSample)
-	if len(d.currentChunk) == d.header.size { // the packet is fully received
+	if len(d.currentChunk) == d.currentHeader.size { // the packet is fully received
 		d.dataExtractionState = receiveCRC
 	}
 }
@@ -313,14 +311,14 @@ func (d *Demodulator) receiveCRC(currentSample byte) {
 	}
 
 	d.currentPacket = append(d.currentPacket, d.currentChunk...)
-	if d.header.done {
+	if d.currentHeader.done {
 		d.OutputChan <- d.currentPacket
 		d.currentPacket = []byte{}
 	}
 	d.currentChunk = d.currentChunk[:0]
 	d.demodulateState = preambleDetection
 	d.dataExtractionState = receiveHeader
-	d.header.done = false
-	d.header.size = 0
+	d.currentHeader.done = false
+	d.currentHeader.size = 0
 
 }

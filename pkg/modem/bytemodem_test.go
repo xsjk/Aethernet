@@ -19,25 +19,7 @@ func TestNaiveByteModem(t *testing.T) {
 		CORRECTION_THRESHOLD = 0.8
 	)
 
-	const ONE = 0x7FFFFFFF
-
-	var preamble = func() []int32 {
-
-		preamble := []int32{
-			-1, 1,
-			-1, -1, 1, 1,
-			-1, -1, -1, 1, 1, 1,
-			-1, -1, -1, -1, 1, 1, 1, 1,
-			-1, -1, -1, -1, 1, 1, 1, 1,
-			-1, -1, -1, 1, 1, 1,
-			-1, -1, 1, 1,
-			-1, 1,
-		}
-		for i := range preamble {
-			preamble[i] *= ONE
-		}
-		return preamble
-	}()
+	var preamble = DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
 
 	var outputChan = make(chan []byte, 10)
 

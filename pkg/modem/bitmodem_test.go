@@ -31,7 +31,7 @@ func TestNaiveBitModem(t *testing.T) {
 	)
 
 	var modem = NaiveBitModem{
-		Preamble: Float64ToInt32(PreambleParams{
+		Preamble: Float64ToInt32(ChripConfig{
 			MinFreq:    PREAMBLE_START_FREQ,
 			MaxFreq:    PREAMBLE_END_FREQ,
 			Length:     PREAMBLE_LENGTH,
@@ -40,14 +40,14 @@ func TestNaiveBitModem(t *testing.T) {
 		BitPerFrame:   BIT_PER_FRAME,
 		FrameInterval: FRAME_INTERVAL,
 		Carriers: [2][]int32{
-			Float64ToInt32(CarrierParams{
+			Float64ToInt32(CarrierConfig{
 				Amplitude:  AMPLITUDE,
 				Freq:       ZERO_FREQ,
 				Phase:      ZERO_PHASE,
 				SampleRate: SAMPLE_RATE,
 				Size:       SAMPLE_PER_BIT,
 			}.New()),
-			Float64ToInt32(CarrierParams{
+			Float64ToInt32(CarrierConfig{
 				Amplitude:  AMPLITUDE,
 				Freq:       ONE_FREQ,
 				Phase:      ONE_PHASE,

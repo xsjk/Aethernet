@@ -29,7 +29,7 @@ const (
 	CORRECTION_THRESHOLD = 0.8
 )
 
-var preamble = modem.Float64ToInt32(modem.PreambleParams{
+var preamble = modem.Float64ToInt32(modem.ChripConfig{
 	MinFreq:    PREAMBLE_START_FREQ,
 	MaxFreq:    PREAMBLE_END_FREQ,
 	Length:     PREAMBLE_LENGTH,
@@ -38,7 +38,7 @@ var preamble = modem.Float64ToInt32(modem.PreambleParams{
 
 var carriers = [2][]int32{
 	modem.Float64ToInt32(
-		modem.CarrierParams{
+		modem.CarrierConfig{
 			Amplitude:  AMPLITUDE,
 			Freq:       ZERO_FREQ,
 			Phase:      ZERO_PHASE,
@@ -46,7 +46,7 @@ var carriers = [2][]int32{
 			Size:       SAMPLE_PER_BIT,
 		}.New()),
 	modem.Float64ToInt32(
-		modem.CarrierParams{
+		modem.CarrierConfig{
 			Amplitude:  AMPLITUDE,
 			Freq:       ONE_FREQ,
 			Phase:      ONE_PHASE,
