@@ -1,6 +1,7 @@
 package layer
 
 import (
+	"Aethernet/pkg/device"
 	"Aethernet/pkg/fixed"
 	"Aethernet/pkg/modem"
 	"crypto/rand"
@@ -27,7 +28,7 @@ func TestPhysicalLayer(t *testing.T) {
 	var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
 
 	var physicalLayer = PhysicalLayer{
-		Device: &LoopbackDevice{},
+		Device: &device.Loopback{},
 		Decoder: Decoder{
 			Demodulator: modem.Demodulator{
 				Preamble:                 preamble,

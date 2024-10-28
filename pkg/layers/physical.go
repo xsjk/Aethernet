@@ -1,12 +1,13 @@
 package layer
 
 import (
+	"Aethernet/pkg/device"
 	"Aethernet/pkg/modem"
 	"fmt"
 )
 
 type PhysicalLayer struct {
-	Device Device
+	Device device.Device
 
 	Decoder Decoder
 	Encoder Encoder
@@ -66,9 +67,9 @@ func (p *PhysicalLayer) Receive() []byte {
 func (p *PhysicalLayer) Open() {
 	p.Decoder.Init()
 	p.Encoder.Init()
-	p.Device.Start(func(in, out [][]int32) {
-		p.inputCallback(in[0])
-		p.outputCallback(out[0])
+	p.Device.Start(func(in, out []int32) {
+		p.inputCallback(in)
+		p.outputCallback(out)
 	})
 	go p.Decoder.Mainloop()
 }

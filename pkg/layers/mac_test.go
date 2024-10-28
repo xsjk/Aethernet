@@ -1,6 +1,7 @@
 package layer
 
 import (
+	"Aethernet/pkg/device"
 	"Aethernet/pkg/fixed"
 	"Aethernet/pkg/modem"
 	"crypto/rand"
@@ -28,10 +29,17 @@ func TestMACLayer(t *testing.T) {
 	var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
 
 	var layers [2]MACLayer
-	var devices [2]Device
 	var addresses [2]MACAddress = [2]MACAddress{0x0, 0x1}
 
-	devices[0], devices[1] = (&CrossfeedDeviceManager{SampleRate: 48000}).Generate()
+	network := device.Network[string]{
+		Config: device.NetworkConfig[string]{
+			{In: "wire1", Out: "wire2"},
+			{In: "wire2", Out: "wire1"},
+		},
+		SampleRate: 48000,
+	}
+
+	devices := network.Build()
 
 	for i := range layers {
 		layers[i] = MACLayer{
