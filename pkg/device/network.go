@@ -30,6 +30,9 @@ type Network[BufferIDType comparable] struct {
 }
 
 func (n *Network[BufferIDType]) Stop() {
+	for _, d := range n.devices {
+		d.callback = nil
+	}
 	close(n.done)
 }
 
@@ -86,9 +89,6 @@ func (n *Network[BufferIDType]) update() {
 }
 
 func (d *networkNode[BufferIDType]) Start(callback func([]int32, []int32)) {
-	if d.Network == nil {
-		panic("Network is nil, use Network.Generate() to create devices")
-	}
 
 	d.callback = callback
 
@@ -101,7 +101,7 @@ func (d *networkNode[BufferIDType]) Start(callback func([]int32, []int32)) {
 				for _, d := range n.devices {
 					<-d.done
 				}
-				n.Stop()
+				close(n.done)
 			}()
 			go func() {
 

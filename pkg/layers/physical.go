@@ -2,6 +2,7 @@ package layer
 
 import (
 	"Aethernet/pkg/device"
+	"Aethernet/pkg/fixed"
 	"Aethernet/pkg/modem"
 	"fmt"
 )
@@ -11,6 +12,10 @@ type PhysicalLayer struct {
 
 	Decoder Decoder
 	Encoder Encoder
+
+	PowerMonitor PowerMonitor
+
+	LateUpdate func(in, out []int32)
 }
 
 type DecodeState int
@@ -20,6 +25,28 @@ type Decoder struct {
 	BufferSize  int
 
 	buffer chan []int32 // data received from the device and to be decoded
+}
+
+type EncoderFrame struct {
+	Data []int32
+	Done chan struct{}
+}
+
+type Encoder struct {
+	Modulator  modem.Modulator
+	BufferSize int
+
+	buffer  chan EncoderFrame // data to be sent
+	current *EncoderFrame     // current sending data
+}
+
+type PowerMonitor struct {
+	Threshold  fixed.T
+	WindowSize int
+
+	latest []fixed.T
+	sum    fixed.T
+	Power  fixed.T
 }
 
 func (d *Decoder) Mainloop() {
@@ -34,19 +61,6 @@ func (d *Decoder) Init() {
 		d.BufferSize = 1
 	}
 	d.buffer = make(chan []int32, d.BufferSize)
-}
-
-type EncoderFrame struct {
-	Data []int32
-	Done chan struct{}
-}
-
-type Encoder struct {
-	Modulator  modem.Modulator
-	BufferSize int
-
-	buffer  chan EncoderFrame // data to be sent
-	current *EncoderFrame     // current sending data
 }
 
 func (e *Encoder) Init() {
@@ -70,6 +84,10 @@ func (p *PhysicalLayer) Open() {
 	p.Device.Start(func(in, out []int32) {
 		p.inputCallback(in)
 		p.outputCallback(out)
+		p.PowerMonitor.Update(in)
+		if p.LateUpdate != nil {
+			p.LateUpdate(in, out)
+		}
 	})
 	go p.Decoder.Mainloop()
 }
@@ -81,22 +99,34 @@ func (p *PhysicalLayer) Close() {
 func (p *PhysicalLayer) inputCallback(in []int32) {
 	in_copy := make([]int32, len(in))
 	copy(in_copy, in)
-	select {
-	case p.Decoder.buffer <- in_copy:
-	default:
-		fmt.Println("[PhysicalLayer] inputBuffer is full")
-		panic("inputBuffer is full")
-		// TODO: expand the buffer
-	}
+	p.Decoder.submit(in_copy)
 }
 
 func (p *PhysicalLayer) outputCallback(out []int32) {
 	p.Encoder.write(out)
 }
 
+func (p *PhysicalLayer) MeasurePower() fixed.T {
+	return p.PowerMonitor.Power
+}
+
+func (p *PhysicalLayer) IsBusy() bool {
+	return p.PowerMonitor.IsBusy()
+}
+
 // try to decode the input and put the result into the Buffer which shares with the some other goroutines
 func (d *Decoder) read(in []int32) {
 	d.Demodulator.Demodulate(in)
+}
+
+// submit data to be decoded
+func (d *Decoder) submit(data []int32) {
+	select {
+	case d.buffer <- data:
+	default:
+		fmt.Println("[Decoder] buffer is full")
+		panic("inputBuffer is full")
+	}
 }
 
 func (e *Encoder) fetch() {
@@ -150,4 +180,38 @@ func (e *Encoder) send(data []byte) {
 		Done: done,
 	}
 	<-done
+}
+
+func (b *PowerMonitor) Update(in []int32) {
+
+	if b.WindowSize == 0 {
+		return
+	}
+	maxsum := fixed.Zero
+	for i := range in {
+		v := fixed.T(in[i] >> fixed.N)
+		if v < 0 {
+			v = -v
+		}
+		if len(b.latest) >= b.WindowSize {
+			b.sum -= b.latest[0]
+			b.latest = b.latest[1:]
+		}
+		b.latest = append(b.latest, v)
+		b.sum += v
+		if b.sum > maxsum {
+			b.Power = b.sum.Div(fixed.FromInt(b.WindowSize))
+		}
+	}
+	fmt.Printf("[PowerMonitor] maxsum: %.2f\n", b.Power.Float())
+}
+
+func (b *PowerMonitor) IsBusy() bool {
+	return b.Power > b.Threshold
+}
+
+func (b *PowerMonitor) Reset() {
+	b.latest = nil
+	b.sum = 0
+	b.Power = 0
 }

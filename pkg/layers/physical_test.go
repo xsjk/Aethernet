@@ -23,6 +23,9 @@ func TestPhysicalLayer(t *testing.T) {
 
 		POWER_THRESHOLD      = 30
 		CORRECTION_THRESHOLD = 0.8
+
+		POWER_MONITOR_THRESHOLD = 0.5
+		POWER_MONITOR_WINDOW    = 10
 	)
 
 	var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
@@ -47,6 +50,10 @@ func TestPhysicalLayer(t *testing.T) {
 				FrameInterval: FRAME_INTERVAL,
 			},
 			BufferSize: OUTPUT_BUFFER_SIZE,
+		},
+		PowerMonitor: PowerMonitor{
+			Threshold:  fixed.FromFloat(POWER_MONITOR_THRESHOLD),
+			WindowSize: POWER_MONITOR_WINDOW,
 		},
 	}
 

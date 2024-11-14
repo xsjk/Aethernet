@@ -96,5 +96,4 @@ func TestNetwork(t *testing.T) {
 	time.Sleep(3 * time.Millisecond)
 
 	network.Stop()
-
 }

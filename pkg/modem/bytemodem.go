@@ -235,6 +235,7 @@ func (d *Demodulator) detectPreamble(currentSample int32) {
 			}
 		}
 		d.frameToDecode = d.frameToDecode[:0]
+		d.potentialHistory = d.potentialHistory[:0]
 	}
 }
 
