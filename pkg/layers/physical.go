@@ -41,8 +41,9 @@ type Encoder struct {
 }
 
 type PowerMonitor struct {
-	Threshold  fixed.T
-	WindowSize int
+	Threshold   fixed.T
+	WindowSize  int
+	notBusyChan chan struct{}
 
 	latest []fixed.T
 	sum    fixed.T
@@ -71,7 +72,11 @@ func (e *Encoder) Init() {
 }
 
 func (p *PhysicalLayer) Send(data []byte) {
-	p.Encoder.send(data)
+	<-p.SendAsync(data)
+}
+
+func (p *PhysicalLayer) SendAsync(data []byte) chan struct{} {
+	return p.Encoder.sendAsync(data)
 }
 
 func (p *PhysicalLayer) Receive() []byte {
@@ -173,13 +178,13 @@ func (e *Encoder) write(out []int32) {
 
 // send the data to the device
 // the function will block until the data is fully sent
-func (e *Encoder) send(data []byte) {
+func (e *Encoder) sendAsync(data []byte) chan struct{} {
 	done := make(chan struct{})
 	e.buffer <- EncoderFrame{
 		Data: e.Modulator.Modulate(data),
 		Done: done,
 	}
-	<-done
+	return done
 }
 
 func (b *PowerMonitor) Update(in []int32) {
@@ -203,7 +208,19 @@ func (b *PowerMonitor) Update(in []int32) {
 			b.Power = b.sum.Div(fixed.FromInt(b.WindowSize))
 		}
 	}
-	fmt.Printf("[PowerMonitor] maxsum: %.2f\n", b.Power.Float())
+	if !b.IsBusy() && b.notBusyChan != nil {
+		select {
+		case <-b.notBusyChan:
+		default:
+			close(b.notBusyChan)
+		}
+	}
+	// fmt.Printf("[PowerMonitor] Power: %.2f, Threshold: %.2f, Busy: %t\n", b.Power.Float(), b.Threshold.Float(), b.IsBusy())
+}
+
+func (b *PowerMonitor) WaitAsync() chan struct{} {
+	b.notBusyChan = make(chan struct{})
+	return b.notBusyChan
 }
 
 func (b *PowerMonitor) IsBusy() bool {

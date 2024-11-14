@@ -3,6 +3,8 @@ package layer
 import (
 	"fmt"
 	"time"
+
+	"golang.org/x/exp/rand"
 )
 
 type MACAddress uint8
@@ -57,11 +59,28 @@ func (m MACHeader) NumBytes() int {
 	return 2
 }
 
+type BackoffTimer interface {
+	GetBackoffTime(retries int) time.Duration
+}
+
+type RandomBackoffTimer struct {
+	MinDelay time.Duration
+	MaxDelay time.Duration
+}
+
+func (b RandomBackoffTimer) GetBackoffTime(retries int) time.Duration {
+	return b.MinDelay + time.Duration(rand.Int63n(int64(b.MaxDelay-b.MinDelay)))
+}
+
 type MACLayer struct {
 	PhysicalLayer
 
-	Address    MACAddress
-	ACKTimeout time.Duration
+	Address      MACAddress
+	ACKTimeout   time.Duration
+	MaxRetries   int
+	BackoffTimer BackoffTimer
+
+	decodeError chan struct{}
 
 	// Send
 	receivedACK   chan struct{}
@@ -80,18 +99,26 @@ func (m *MACLayer) Open() {
 			header := MACHeader{}
 			header.FromBytes(packet[:header.NumBytes()])
 			if header.Destination == m.Address {
-				m.Handle(header, packet[header.NumBytes():])
+				m.handle(header, packet[header.NumBytes():])
 			}
 		}
 	}()
+	m.Decoder.Demodulator.ErrorHandler = func(err error) {
+		fmt.Printf("[MAC%x] Decode error: %s\n", m.Address, err)
+
+		// Signal the decode error
+		if m.decodeError != nil {
+			select {
+			case <-m.decodeError:
+			default:
+				close(m.decodeError)
+			}
+		}
+
+	}
 }
 
-func (m *MACLayer) Handle(header MACHeader, data []byte) {
-
-	// // ignore the packet if the packet is sent by myself
-	// if header.Source == m.Address {
-	// 	return
-	// }
+func (m *MACLayer) handle(header MACHeader, data []byte) {
 
 	switch header.Type {
 	case MACTypeData:
@@ -99,14 +126,15 @@ func (m *MACLayer) Handle(header MACHeader, data []byte) {
 		if header.IsLast {
 			select {
 			case m.OutputChan <- m.currentPacket:
-				fmt.Println("[MAC] Packet received")
+				fmt.Printf("[MAC%x] Packet %d received\n", m.Address, header.Index)
 			default:
-				fmt.Println("[MAC] Output channel is full")
+				fmt.Printf("[MAC%x] Output channel is full\n", m.Address)
 				panic("Output channel is full")
 			}
 			m.currentPacket = nil
 		}
 		// send the ACK
+		fmt.Printf("[MAC%x] ACK for packet %d sent\n", m.Address, header.Index)
 		go m.PhysicalLayer.Send(MACHeader{
 			Source:      m.Address,
 			Destination: header.Source,
@@ -115,19 +143,26 @@ func (m *MACLayer) Handle(header MACHeader, data []byte) {
 		}.ToBytes())
 	case MACTypeACK:
 		// check the index with the current sending packet
-		fmt.Printf("[MAC] ACK received for packet %d\n", header.Index)
+		fmt.Printf("[MAC%x] ACK for packet %d received\n", m.Address, header.Index)
 		if m.expectedIndex == header.Index {
-			close(m.receivedACK)
+			if m.receivedACK != nil {
+				select {
+				case <-m.receivedACK:
+				default:
+					close(m.receivedACK)
+				}
+			}
 		} else {
-			fmt.Printf("[MAC] ACK for packet %d is not expected\n", header.Index)
-			panic("ACK for packet is not expected")
+			fmt.Printf("[MAC%x] ACK for packet %d is not expected, expected %d\n", m.Address, header.Index, m.expectedIndex)
+			// panic("ACK for packet is not expected")
 		}
 	}
 }
 
 func (m *MACLayer) Send(address MACAddress, data []byte) error {
+	// TODO: lock the sending process, so that only one sending process is allowed to call this function at a time
 
-	packetLength := m.PhysicalLayer.Encoder.Modulator.BytePerFrame
+	packetLength := m.PhysicalLayer.Encoder.Modulator.BytePerFrame - MACHeader{}.NumBytes()
 
 	// split the data into packets (do not use physical layer's packet splitting)
 	packets := make([][]byte, 0)
@@ -142,32 +177,67 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 			header.IsLast = true
 		}
 		packet := append(header.ToBytes(), data[i:end]...)
+		fmt.Printf("[MAC%x] Making packet %d, length %d\n", m.Address, header.Index, len(packet))
 		packets = append(packets, packet)
 		header.Index++
 	}
 
 	// send the packets
 	for i, packet := range packets {
+		retries := 0
 	resendLoop:
 		for {
-			m.PhysicalLayer.Send(packet)
+
+			var done chan struct{}
+
+			// wait for the physical layer to be not busy
+			done = m.PowerMonitor.WaitAsync()
+			select {
+			case <-done:
+				// case <-time.After(10 * time.Millisecond):
+				// return fmt.Errorf("physical layer is busy for too long")
+			}
+
+			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
+
+			// send the packet
+			done = m.PhysicalLayer.SendAsync(packet)
+			m.decodeError = make(chan struct{})
+			select {
+			case <-done:
+			case <-m.decodeError:
+				// Decode error while sending the packet
+				fmt.Printf("[MAC%x] Decode error while ending packet %d, possibly due to collision\n", m.Address, i)
+				// Collision detected, resend the packet after a random backoff time
+				backoff := m.BackoffTimer.GetBackoffTime(retries)
+				fmt.Printf("[MAC%x] Backoff for %v\n", m.Address, backoff)
+				time.Sleep(backoff)
+				retries++
+				continue resendLoop
+			}
+
+			// wait for the ACK
 			m.receivedACK = make(chan struct{})
 			m.expectedIndex = uint8(i)
-			// wait for the ACK
 			select {
 			case <-m.receivedACK:
 				// ACK received
 				break resendLoop
 			case <-time.After(m.ACKTimeout):
 				// ACK timeout
-				fmt.Printf("[MAC] Packet %d ACK timeout\n", i)
-				continue
+				fmt.Printf("[MAC%x] Packet %d ACK timeout\n", m.Address, i)
+				if retries >= m.MaxRetries {
+					return fmt.Errorf("packet %d ACK timeout", i)
+				} else {
+					retries++
+					fmt.Printf("[MAC%x] Resending packet %d\n", m.Address, i)
+					continue resendLoop
+				}
 			}
-		}
-		fmt.Printf("[MAC] Packet %d sent and ACK received\n", i)
-	}
 
-	m.receivedACK = nil
+		}
+		fmt.Printf("[MAC%x] Packet %d sent and ACK received\n", m.Address, i)
+	}
 
 	return nil
 
@@ -175,4 +245,13 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 
 func (m *MACLayer) Receive() []byte {
 	return <-m.OutputChan
+}
+
+func (m *MACLayer) ReceiveWithTimeout(timeout time.Duration) ([]byte, error) {
+	select {
+	case packet := <-m.OutputChan:
+		return packet, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("receive timeout")
+	}
 }

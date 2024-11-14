@@ -47,6 +47,7 @@ type Demodulator struct {
 	CorrectionThreshold      fixed.T
 	DemodulatePowerThreshold fixed.T
 	OutputChan               chan []byte // demodulated data
+	ErrorHandler             func(error)
 
 	once sync.Once
 
@@ -267,6 +268,7 @@ func (d *Demodulator) extractData(currentSample int32) {
 	currentByte, exists := B10B8[d.currentBits.data.Value]
 	if !exists {
 		fmt.Printf("[Demodulation] Warning: B10B8 does not contain key %v\n", d.currentBits.data.Value)
+		d.raise(fmt.Errorf("B10B8 does not contain key %v", d.currentBits.data.Value))
 		d.currentBits.data.Value = 0
 		d.currentBits.count = 0
 		d.demodulateState = preambleDetection
@@ -291,6 +293,7 @@ func (d *Demodulator) receiveHeader(currentSample byte) {
 
 	if d.currentHeader.size == 0 { // invalid packet
 		fmt.Println("[Demodulation] Warning: header.size is 0, invalid packet")
+		d.raise(fmt.Errorf("header.size is 0, invalid packet"))
 		d.demodulateState = preambleDetection
 		return
 	}
@@ -316,6 +319,7 @@ func (d *Demodulator) receiveCRC(currentSample byte) {
 		fmt.Println("[Demodulation] CRC8 check passed")
 	} else {
 		fmt.Println("[Demodulation] CRC8 check failed")
+		d.raise(fmt.Errorf("CRC8 check failed"))
 	}
 
 	d.currentPacket = append(d.currentPacket, d.currentChunk...)
@@ -328,4 +332,12 @@ func (d *Demodulator) receiveCRC(currentSample byte) {
 	d.dataExtractionState = receiveHeader
 	d.currentHeader.done = false
 	d.currentHeader.size = 0
+}
+
+func (d *Demodulator) raise(err error) {
+	if d.ErrorHandler == nil {
+		panic("No error handler for Demodulator is set")
+	} else {
+		d.ErrorHandler(err)
+	}
 }

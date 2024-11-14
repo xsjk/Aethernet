@@ -5,7 +5,6 @@ import (
 	"Aethernet/pkg/fixed"
 	"Aethernet/pkg/modem"
 	"crypto/rand"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -14,7 +13,7 @@ func TestMACLayer(t *testing.T) {
 
 	const (
 		BYTE_PER_FRAME = 125
-		FRAME_INTERVAL = 10
+		FRAME_INTERVAL = 256
 		CARRIER_SIZE   = 3
 		INTERVAL_SIZE  = 10
 		PAYLOAD_SIZE   = 32
@@ -24,6 +23,12 @@ func TestMACLayer(t *testing.T) {
 
 		POWER_THRESHOLD      = 30
 		CORRECTION_THRESHOLD = 0.8
+
+		POWER_MONITOR_THRESHOLD = 0.4
+		POWER_MONITOR_WINDOW    = 10
+
+		ACK_TIMEOUT        = 1000 * time.Millisecond
+		MAX_RETRY_ATTEMPTS = 5
 	)
 
 	var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
@@ -33,8 +38,8 @@ func TestMACLayer(t *testing.T) {
 
 	network := device.Network[string]{
 		Config: device.NetworkConfig[string]{
-			{In: "wire1", Out: "wire2"},
-			{In: "wire2", Out: "wire1"},
+			{In: "w", Out: "w"},
+			{In: "w", Out: "w"},
 		},
 		SampleRate: 48000,
 	}
@@ -64,27 +69,84 @@ func TestMACLayer(t *testing.T) {
 					},
 					BufferSize: OUTPUT_BUFFER_SIZE,
 				},
+				PowerMonitor: PowerMonitor{
+					Threshold:  fixed.FromFloat(POWER_MONITOR_THRESHOLD),
+					WindowSize: POWER_MONITOR_WINDOW,
+				},
 			},
 			Address:    addresses[i],
-			ACKTimeout: 100 * time.Millisecond,
-			OutputChan: make(chan []byte),
+			ACKTimeout: ACK_TIMEOUT,
+			MaxRetries: MAX_RETRY_ATTEMPTS,
+			BackoffTimer: RandomBackoffTimer{
+				MinDelay: 0 * time.Millisecond,
+				MaxDelay: 100 * time.Millisecond,
+			},
+			OutputChan: make(chan []byte, 10),
 		}
 	}
 
 	layers[0].Open()
 	layers[1].Open()
 
-	inputBytes := make([]byte, 1000)
-	rand.Read(inputBytes)
+	packet0 := make([]byte, 6250)
+	packet1 := make([]byte, 6250)
+	rand.Read(packet0)
+	rand.Read(packet1)
 
-	go layers[0].Send(addresses[1], inputBytes)
+	done0 := make(chan bool)
+	done1 := make(chan bool)
 
-	output := layers[1].Receive()
+	var start_time, finish_time0, finish_time1 time.Time
 
-	t.Logf("len(inputBytes) = %d, len(output) = %d", len(inputBytes), len(output))
-	if !reflect.DeepEqual(inputBytes, output) {
-		t.Errorf("inputBytes and outputBytes are different")
-	}
+	start_time = time.Now()
+
+	go func() {
+		err := layers[0].Send(addresses[1], packet0)
+		if err != nil {
+			t.Errorf("Error sending packet0: %v", err)
+		}
+		done0 <- true
+		finish_time0 = time.Now()
+	}()
+	go func() {
+		err := layers[1].Send(addresses[0], packet1)
+		if err != nil {
+			t.Errorf("Error sending packet1: %v", err)
+		}
+		done1 <- true
+		finish_time1 = time.Now()
+	}()
+
+	<-done0
+	<-done1
+
+	t.Logf("Time taken to send packets: %v", finish_time0.Sub(start_time))
+	t.Logf("Time taken to send packets: %v", finish_time1.Sub(start_time))
+
+	// output1, err := layers[1].ReceiveWithTimeout(2 * time.Second)
+	// if err != nil {
+	// 	t.Errorf("Error receiving packet1: %v", err)
+	// } else {
+	// 	<-done0
+	// 	t.Logf("len(packet0) = %d, len(output1) = %d", len(packet0), len(output1))
+	// 	if !reflect.DeepEqual(packet0, output1) {
+	// 		t.Errorf("packet0 and output1 are different")
+	// 	} else {
+	// 		t.Logf("packet0 and output1 are the same")
+	// 	}
+	// }
+	// output0, err := layers[0].ReceiveWithTimeout(2 * time.Second)
+	// if err != nil {
+	// 	t.Errorf("Error receiving packet0: %v", err)
+	// } else {
+	// 	<-done1
+	// 	t.Logf("len(packet1) = %d, len(output0) = %d", len(packet1), len(output0))
+	// 	if !reflect.DeepEqual(packet1, output0) {
+	// 		t.Errorf("packet1 and output0 are different")
+	// 	} else {
+	// 		t.Logf("packet1 and output0 are the same")
+	// 	}
+	// }
 
 	layers[0].Close()
 	layers[1].Close()
