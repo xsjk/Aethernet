@@ -1,4 +1,4 @@
-package layer
+package layers
 
 import (
 	"fmt"
@@ -244,12 +244,16 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 }
 
 func (m *MACLayer) Receive() []byte {
-	return <-m.OutputChan
+	return <-m.ReceiveAsync()
+}
+
+func (m *MACLayer) ReceiveAsync() <-chan []byte {
+	return m.OutputChan
 }
 
 func (m *MACLayer) ReceiveWithTimeout(timeout time.Duration) ([]byte, error) {
 	select {
-	case packet := <-m.OutputChan:
+	case packet := <-m.ReceiveAsync():
 		return packet, nil
 	case <-time.After(timeout):
 		return nil, fmt.Errorf("receive timeout")

@@ -1,4 +1,4 @@
-package layer
+package layers
 
 import (
 	"Aethernet/pkg/device"
@@ -29,6 +29,9 @@ func TestMACLayer(t *testing.T) {
 
 		ACK_TIMEOUT        = 1000 * time.Millisecond
 		MAX_RETRY_ATTEMPTS = 5
+
+		MIN_BACKOFF = 0
+		MAX_BACKOFF = 100 * time.Millisecond
 	)
 
 	var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
@@ -78,8 +81,8 @@ func TestMACLayer(t *testing.T) {
 			ACKTimeout: ACK_TIMEOUT,
 			MaxRetries: MAX_RETRY_ATTEMPTS,
 			BackoffTimer: RandomBackoffTimer{
-				MinDelay: 0 * time.Millisecond,
-				MaxDelay: 100 * time.Millisecond,
+				MinDelay: MIN_BACKOFF,
+				MaxDelay: MAX_BACKOFF,
 			},
 			OutputChan: make(chan []byte, 10),
 		}

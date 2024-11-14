@@ -142,7 +142,7 @@ func (m Modulator) Modulate(inputBytes []byte) []int32 {
 		// modulate the CRC8 byte
 		BitSet(B8B10[crcByte]).ForEach(modulateBit, 10)
 
-		fmt.Println("[Modulation] CRC8:", ByteToBool([]byte{crcByte}))
+		debugLog("[Modulation] CRC8: %v\n", ByteToBool([]byte{crcByte}))
 
 		// add the interval
 		for j := 0; j < m.FrameInterval; j++ {
@@ -188,7 +188,7 @@ func (d *Demodulator) detectPreamble(currentSample int32) {
 
 	// find a potential start of the signal
 	if power > d.localMaxPower && power > d.DemodulatePowerThreshold {
-		fmt.Printf("[Demodulation] find a potential start of the signal at %v where power: %.2f\n", debugIndex, fixed.T(power).Float())
+		debugLog("[Demodulation] find a potential start of the signal at %v where power: %.2f\n", debugIndex, fixed.T(power).Float())
 		d.localMaxPower = power
 		d.frameToDecode = d.frameToDecode[:0]
 		d.distanceFromPotentialStart = 0
@@ -204,8 +204,8 @@ func (d *Demodulator) detectPreamble(currentSample int32) {
 	// a real start of the signal is found
 	if d.distanceFromPotentialStart >= len(d.Preamble) {
 
-		fmt.Printf("[Demodulation] find the start of the signal at %v where power: %.2f\n", debugIndex-d.distanceFromPotentialStart, fixed.T(d.localMaxPower).Float())
-		fmt.Println("[Demodulation] potentialHistory:", d.potentialHistory)
+		debugLog("[Demodulation] find the start of the signal at %v where power: %.2f\n", debugIndex-d.distanceFromPotentialStart, fixed.T(d.localMaxPower).Float())
+		debugLog("[Demodulation] potentialHistory: %v\n", d.potentialHistory)
 
 		// determine whether to flip
 		d.correctionFlag = false
@@ -213,14 +213,14 @@ func (d *Demodulator) detectPreamble(currentSample int32) {
 			lastPotentialStart := d.potentialHistory[len(d.potentialHistory)-1]
 			secondLastPotentialStart := d.potentialHistory[len(d.potentialHistory)-2]
 			increaseRate := lastPotentialStart.Sub(secondLastPotentialStart).Div(secondLastPotentialStart)
-			fmt.Printf("[Demodulation] increaseRate: %.2f\n", fixed.T(increaseRate).Float())
+			debugLog("[Demodulation] increaseRate: %.2f\n", fixed.T(increaseRate).Float())
 
 			d.correctionFlag = increaseRate < d.CorrectionThreshold
 		} else {
-			fmt.Println("[Demodulation] not enough potentialHistory to determine correction, you may decrease the POWER_THRESHOLD")
+			debugLog("[Demodulation] not enough potentialHistory to determine correction, you may decrease the POWER_THRESHOLD\n")
 		}
 
-		fmt.Printf("[Demodulation] correctionFlag: %v\n", d.correctionFlag)
+		debugLog("[Demodulation] correctionFlag: %v\n", d.correctionFlag)
 
 		d.localMaxPower = 0
 		d.currentWindow = d.currentWindow[:0]
@@ -267,7 +267,7 @@ func (d *Demodulator) extractData(currentSample int32) {
 
 	currentByte, exists := B10B8[d.currentBits.data.Value]
 	if !exists {
-		fmt.Printf("[Demodulation] Warning: B10B8 does not contain key %v\n", d.currentBits.data.Value)
+		debugLog("[Demodulation] Warning: B10B8 does not contain key %v\n", d.currentBits.data.Value)
 		d.raise(fmt.Errorf("B10B8 does not contain key %v", d.currentBits.data.Value))
 		d.currentBits.data.Value = 0
 		d.currentBits.count = 0
@@ -292,7 +292,7 @@ func (d *Demodulator) receiveHeader(currentSample byte) {
 	d.currentHeader.size = int(currentSample & 0b01111111)
 
 	if d.currentHeader.size == 0 { // invalid packet
-		fmt.Println("[Demodulation] Warning: header.size is 0, invalid packet")
+		debugLog("[Demodulation] Warning: header.size is 0, invalid packet\n")
 		d.raise(fmt.Errorf("header.size is 0, invalid packet"))
 		d.demodulateState = preambleDetection
 		return
@@ -316,9 +316,9 @@ func (d *Demodulator) receiveData(currentSample byte) {
 
 func (d *Demodulator) receiveCRC(currentSample byte) {
 	if d.crcChecker.Get() == currentSample {
-		fmt.Println("[Demodulation] CRC8 check passed")
+		debugLog("[Demodulation] CRC8 check passed\n")
 	} else {
-		fmt.Println("[Demodulation] CRC8 check failed")
+		debugLog("[Demodulation] CRC8 check failed\n")
 		d.raise(fmt.Errorf("CRC8 check failed"))
 	}
 

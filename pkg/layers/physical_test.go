@@ -1,4 +1,4 @@
-package layer
+package layers
 
 import (
 	"Aethernet/pkg/device"
