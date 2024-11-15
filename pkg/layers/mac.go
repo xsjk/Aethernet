@@ -141,7 +141,6 @@ func (m *MACLayer) handle(header MACHeader, data []byte) {
 
 func (m *MACLayer) Send(address MACAddress, data []byte) error {
 	// TODO: lock the sending process, so that only one sending process is allowed to call this function at a time
-
 	packetLength := m.PhysicalLayer.Encoder.Modulator.BytePerFrame - MACHeader{}.NumBytes()
 
 	// split the data into packets (do not use physical layer's packet splitting)
@@ -166,26 +165,31 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 	// send the packets
 	for i, packet := range packets {
 		retries := 0
-	resendLoop:
+	resend:
 		for {
-
 			// wait for the physical layer to be not busy
-			<-m.PowerMonitor.WaitAsync()
+			m.PowerMonitor.NotBusy.Wait()
 
 			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
 
 			// send the packet
 			select {
 			case <-m.PhysicalLayer.SendAsync(packet):
-			case <-m.Decoder.Demodulator.WaitForError():
-				// Decode error while sending the packet
-				fmt.Printf("[MAC%x] Decode error while ending packet %d, possibly due to collision\n", m.Address, i)
+			case err := <-m.PhysicalLayer.WaitForDecodeError():
+				fmt.Printf("[MAC%x] Decode error %v while sending packet %d, possibly due to collision\n\n", m.Address, err, i)
+
+				// m.PhysicalLayer.CancelSend()
+
+				// Backoff
+				if m.BackoffTimer == nil {
+					fmt.Printf("[MAC%x] No backoff timer, retry immediately\n", m.Address)
+				} else {
+					backoff := m.BackoffTimer.GetBackoffTime(retries)
+					fmt.Printf("[MAC%x] Backoff for %v\n", m.Address, backoff)
+					time.Sleep(backoff)
+				}
 				// Collision detected, resend the packet after a random backoff time
-				backoff := m.BackoffTimer.GetBackoffTime(retries)
-				fmt.Printf("[MAC%x] Backoff for %v\n", m.Address, backoff)
-				time.Sleep(backoff)
-				retries++
-				continue resendLoop
+				goto retry
 			}
 
 			// wait for the ACK
@@ -193,21 +197,28 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 			select {
 			case <-m.receivedACK.Await():
 				// ACK received
-				break resendLoop
+				fmt.Printf("[MAC%x] Packet %d sent and ACK received\n", m.Address, i)
+				break resend
 			case <-time.After(m.ACKTimeout):
 				// ACK timeout
 				fmt.Printf("[MAC%x] Packet %d ACK timeout\n", m.Address, i)
+				goto retry
+			}
+
+		retry:
+			{
+
 				if retries >= m.MaxRetries {
 					return fmt.Errorf("packet %d ACK timeout", i)
 				} else {
 					retries++
-					fmt.Printf("[MAC%x] Resending packet %d\n", m.Address, i)
-					continue resendLoop
+					fmt.Printf("[MAC%x] Resending packet %d, retry %d\n", m.Address, i, retries)
+					continue resend
 				}
 			}
 
 		}
-		fmt.Printf("[MAC%x] Packet %d sent and ACK received\n", m.Address, i)
+
 	}
 
 	return nil
@@ -215,11 +226,7 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 }
 
 func (m *MACLayer) SendAsync(address MACAddress, data []byte) <-chan error {
-	done := make(chan error)
-	go func() {
-		done <- m.Send(address, data)
-	}()
-	return done
+	return async.AwaitResult(func() error { return m.Send(address, data) })
 }
 
 func (m *MACLayer) Receive() []byte {

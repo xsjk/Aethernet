@@ -65,6 +65,10 @@ func (d *Decoder) Init() {
 	d.buffer = make(chan []int32, d.BufferSize)
 }
 
+func (d *Decoder) WaitForError() <-chan error {
+	return d.Demodulator.WaitForError()
+}
+
 func (e *Encoder) Init() {
 	if e.BufferSize == 0 {
 		e.BufferSize = 1
@@ -91,6 +95,10 @@ func (p *PhysicalLayer) SendAsync(data []byte) <-chan bool {
 
 func (p *PhysicalLayer) IsSending() bool {
 	return p.Encoder.current != nil || len(p.Encoder.buffer) > 0
+}
+
+func (p *PhysicalLayer) WaitForDecodeError() <-chan error {
+	return p.Decoder.WaitForError()
 }
 
 func (p *PhysicalLayer) CancelSend() {

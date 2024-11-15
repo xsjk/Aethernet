@@ -12,6 +12,8 @@ import (
 func TestMACLayer(t *testing.T) {
 
 	const (
+		SAMPLE_RATE = 48000
+
 		BYTE_PER_FRAME = 125
 		FRAME_INTERVAL = 256
 		CARRIER_SIZE   = 3
@@ -44,7 +46,7 @@ func TestMACLayer(t *testing.T) {
 			{In: "w", Out: "w"},
 			{In: "w", Out: "w"},
 		},
-		SampleRate: 48000,
+		SampleRate: SAMPLE_RATE,
 	}
 
 	devices := network.Build()

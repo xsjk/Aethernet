@@ -48,7 +48,7 @@ type Demodulator struct {
 	CorrectionThreshold      fixed.T
 	DemodulatePowerThreshold fixed.T
 	OutputChan               chan []byte // demodulated data
-	errorSignal              async.Signal[struct{}]
+	errorSignal              async.Signal[error]
 
 	once sync.Once
 
@@ -341,13 +341,12 @@ func (d *Demodulator) raise(err error) {
 		select {
 		case <-d.errorSignal:
 		default:
-			// d.errorSignal <- err
-			close(d.errorSignal)
+			d.errorSignal <- err
 		}
 	}
 }
 
-func (d *Demodulator) WaitForError() <-chan struct{} {
-	d.errorSignal = make(chan struct{})
+func (d *Demodulator) WaitForError() <-chan error {
+	d.errorSignal = make(chan error, 1)
 	return d.errorSignal
 }
