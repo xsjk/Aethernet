@@ -1,6 +1,7 @@
 package layers
 
 import (
+	"Aethernet/pkg/async"
 	"Aethernet/pkg/device"
 	"Aethernet/pkg/fixed"
 	"Aethernet/pkg/modem"
@@ -29,7 +30,7 @@ type Decoder struct {
 
 type EncoderFrame struct {
 	Data []int32
-	Done chan struct{}
+	Done chan bool
 }
 
 type Encoder struct {
@@ -41,9 +42,9 @@ type Encoder struct {
 }
 
 type PowerMonitor struct {
-	Threshold   fixed.T
-	WindowSize  int
-	notBusyChan chan struct{}
+	Threshold  fixed.T
+	WindowSize int
+	NotBusy    async.Signal[struct{}]
 
 	latest []fixed.T
 	sum    fixed.T
@@ -68,15 +69,32 @@ func (e *Encoder) Init() {
 	if e.BufferSize == 0 {
 		e.BufferSize = 1
 	}
+	e.Reset()
+}
+
+func (e *Encoder) Reset() {
 	e.buffer = make(chan EncoderFrame, e.BufferSize)
+	if e.current != nil {
+		// TODO notify the sender that the data has been cancelled
+		e.current.Done <- false
+	}
+	e.current = nil
 }
 
 func (p *PhysicalLayer) Send(data []byte) {
 	<-p.SendAsync(data)
 }
 
-func (p *PhysicalLayer) SendAsync(data []byte) chan struct{} {
+func (p *PhysicalLayer) SendAsync(data []byte) <-chan bool {
 	return p.Encoder.sendAsync(data)
+}
+
+func (p *PhysicalLayer) IsSending() bool {
+	return p.Encoder.current != nil || len(p.Encoder.buffer) > 0
+}
+
+func (p *PhysicalLayer) CancelSend() {
+	p.Encoder.Reset()
 }
 
 func (p *PhysicalLayer) Receive() []byte {
@@ -159,7 +177,7 @@ func (e *Encoder) write(out []int32) {
 
 		if len(e.current.Data) == 0 {
 			// notify the sender that the data has been sent
-			close(e.current.Done)
+			e.current.Done <- true
 			e.current = nil
 			e.fetch()
 		}
@@ -178,8 +196,8 @@ func (e *Encoder) write(out []int32) {
 
 // send the data to the device
 // the function will block until the data is fully sent
-func (e *Encoder) sendAsync(data []byte) chan struct{} {
-	done := make(chan struct{})
+func (e *Encoder) sendAsync(data []byte) <-chan bool {
+	done := make(chan bool, 1)
 	e.buffer <- EncoderFrame{
 		Data: e.Modulator.Modulate(data),
 		Done: done,
@@ -208,19 +226,14 @@ func (b *PowerMonitor) Update(in []int32) {
 			b.Power = b.sum.Div(fixed.FromInt(b.WindowSize))
 		}
 	}
-	if !b.IsBusy() && b.notBusyChan != nil {
-		select {
-		case <-b.notBusyChan:
-		default:
-			close(b.notBusyChan)
-		}
+	if !b.IsBusy() {
+		b.NotBusy.Notify()
 	}
 	// fmt.Printf("[PowerMonitor] Power: %.2f, Threshold: %.2f, Busy: %t\n", b.Power.Float(), b.Threshold.Float(), b.IsBusy())
 }
 
-func (b *PowerMonitor) WaitAsync() chan struct{} {
-	b.notBusyChan = make(chan struct{})
-	return b.notBusyChan
+func (b *PowerMonitor) WaitAsync() <-chan struct{} {
+	return b.NotBusy.Await()
 }
 
 func (b *PowerMonitor) IsBusy() bool {

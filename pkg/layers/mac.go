@@ -189,23 +189,15 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 	resendLoop:
 		for {
 
-			var done chan struct{}
-
 			// wait for the physical layer to be not busy
-			done = m.PowerMonitor.WaitAsync()
-			select {
-			case <-done:
-				// case <-time.After(10 * time.Millisecond):
-				// return fmt.Errorf("physical layer is busy for too long")
-			}
+			<-m.PowerMonitor.WaitAsync()
 
 			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
 
 			// send the packet
-			done = m.PhysicalLayer.SendAsync(packet)
 			m.decodeError = make(chan struct{})
 			select {
-			case <-done:
+			case <-m.PhysicalLayer.SendAsync(packet):
 			case <-m.decodeError:
 				// Decode error while sending the packet
 				fmt.Printf("[MAC%x] Decode error while ending packet %d, possibly due to collision\n", m.Address, i)
