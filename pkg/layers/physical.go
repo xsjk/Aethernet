@@ -44,7 +44,8 @@ type Encoder struct {
 type PowerMonitor struct {
 	Threshold  fixed.T
 	WindowSize int
-	NotBusy    async.Signal[struct{}]
+
+	notBusy async.Signal[struct{}]
 
 	latest []fixed.T
 	sum    fixed.T
@@ -145,6 +146,10 @@ func (p *PhysicalLayer) IsBusy() bool {
 	return p.PowerMonitor.IsBusy()
 }
 
+func (p *PhysicalLayer) WaitForNotBusy() <-chan struct{} {
+	return p.PowerMonitor.WaitAsync()
+}
+
 // try to decode the input and put the result into the Buffer which shares with the some other goroutines
 func (d *Decoder) read(in []int32) {
 	d.Demodulator.Demodulate(in)
@@ -235,13 +240,13 @@ func (b *PowerMonitor) Update(in []int32) {
 		}
 	}
 	if !b.IsBusy() {
-		b.NotBusy.Notify()
+		b.notBusy.Notify()
 	}
 	// fmt.Printf("[PowerMonitor] Power: %.2f, Threshold: %.2f, Busy: %t\n", b.Power.Float(), b.Threshold.Float(), b.IsBusy())
 }
 
 func (b *PowerMonitor) WaitAsync() <-chan struct{} {
-	return b.NotBusy.Await()
+	return b.notBusy.Await()
 }
 
 func (b *PowerMonitor) IsBusy() bool {

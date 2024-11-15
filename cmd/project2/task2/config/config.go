@@ -29,19 +29,27 @@ const (
 
 	MIN_BACKOFF = 0
 	MAX_BACKOFF = 100 * time.Millisecond
+
+	DATA_AMPLITUDE    = 0x7fffffff
+	PRAMBLE_AMPLITUDE = 0x7fffffff
+
+	// SAMPLE_RATE = 48000
+	SAMPLE_RATE = 44100
 )
 
-var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
+var Preamble = modem.DigitalChripConfig{N: 5, Amplitude: 0x7fffffff}.New()
+
+var Device = &device.ASIOMono{
+	DeviceName: "ASIO4ALL v2",
+	SampleRate: SAMPLE_RATE,
+}
 
 var Layer = layers.MACLayer{
 	PhysicalLayer: layers.PhysicalLayer{
-		Device: &device.ASIOMono{
-			DeviceName: "ASIO4ALL v2",
-			SampleRate: 48000,
-		},
+		Device: Device,
 		Decoder: layers.Decoder{
 			Demodulator: modem.Demodulator{
-				Preamble:                 preamble,
+				Preamble:                 Preamble,
 				CarrierSize:              CARRIER_SIZE,
 				CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
 				DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
@@ -51,10 +59,11 @@ var Layer = layers.MACLayer{
 		},
 		Encoder: layers.Encoder{
 			Modulator: modem.Modulator{
-				Preamble:      preamble,
+				Preamble:      Preamble,
 				CarrierSize:   CARRIER_SIZE,
 				BytePerFrame:  BYTE_PER_FRAME,
 				FrameInterval: FRAME_INTERVAL,
+				Amplitude:     DATA_AMPLITUDE,
 			},
 			BufferSize: OUTPUT_BUFFER_SIZE,
 		},

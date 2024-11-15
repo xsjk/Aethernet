@@ -168,7 +168,7 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 	resend:
 		for {
 			// wait for the physical layer to be not busy
-			m.PowerMonitor.NotBusy.Wait()
+			<-m.WaitForNotBusy()
 
 			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
 
@@ -177,10 +177,7 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 			case <-m.PhysicalLayer.SendAsync(packet):
 			case err := <-m.PhysicalLayer.WaitForDecodeError():
 				fmt.Printf("[MAC%x] Decode error %v while sending packet %d, possibly due to collision\n\n", m.Address, err, i)
-
-				// m.PhysicalLayer.CancelSend()
-
-				// Backoff
+				// Collision detected, resend the packet after a random backoff time
 				if m.BackoffTimer == nil {
 					fmt.Printf("[MAC%x] No backoff timer, retry immediately\n", m.Address)
 				} else {
@@ -188,7 +185,6 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 					fmt.Printf("[MAC%x] Backoff for %v\n", m.Address, backoff)
 					time.Sleep(backoff)
 				}
-				// Collision detected, resend the packet after a random backoff time
 				goto retry
 			}
 
