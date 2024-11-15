@@ -61,7 +61,6 @@ type Demodulator struct {
 	localMaxPower              fixed.T
 	distanceFromPotentialStart int
 	potentialHistory           []fixed.T
-	correctionFlag             bool
 
 	// data extraction
 	crcChecker  CRC8Checker
@@ -89,7 +88,6 @@ func (d *Demodulator) Reset() {
 	d.localMaxPower = fixed.Zero
 	d.distanceFromPotentialStart = -1
 	d.potentialHistory = make([]fixed.T, 0)
-	d.correctionFlag = false
 
 	d.crcChecker.Reset()
 	d.currentBits.data.Value = 0
@@ -215,20 +213,6 @@ func (d *Demodulator) detectPreamble(currentSample int32) {
 		debugLog("[Demodulation] potentialHistory: %v\n", d.potentialHistory)
 
 		// determine whether to flip
-		d.correctionFlag = false
-		if len(d.potentialHistory) > 1 {
-			lastPotentialStart := d.potentialHistory[len(d.potentialHistory)-1]
-			secondLastPotentialStart := d.potentialHistory[len(d.potentialHistory)-2]
-			increaseRate := lastPotentialStart.Sub(secondLastPotentialStart).Div(secondLastPotentialStart)
-			debugLog("[Demodulation] increaseRate: %.2f\n", fixed.T(increaseRate).Float())
-
-			d.correctionFlag = increaseRate < d.CorrectionThreshold
-		} else {
-			debugLog("[Demodulation] not enough potentialHistory to determine correction, you may decrease the POWER_THRESHOLD\n")
-		}
-
-		debugLog("[Demodulation] correctionFlag: %v\n", d.correctionFlag)
-
 		d.localMaxPower = 0
 		d.currentWindow = d.currentWindow[:0]
 		d.distanceFromPotentialStart = -1
