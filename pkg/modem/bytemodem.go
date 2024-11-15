@@ -22,6 +22,7 @@ type Modulator struct {
 	CarrierSize   int // number of ticks used to represent a bit
 	BytePerFrame  int // number of bytes per frame
 	FrameInterval int // number of ticks as interval between frames
+	Amplitude     int32
 
 	crcChecker CRC8Checker
 }
@@ -109,12 +110,17 @@ func (m Modulator) Modulate(inputBytes []byte) []int32 {
 
 	modulatedData := make([]int32, 0, frameCount*(len(m.Preamble)+(1+m.BytePerFrame+1)*10*samplePerBit+m.FrameInterval))
 
+	if m.Amplitude == 0 {
+		fmt.Printf("[Modulation] Warning: Amplitude is not set, using 0x7FFFFFFF\n")
+		m.Amplitude = 0x7FFFFFFF
+	}
+
 	modulateBit := func(bit bool) {
 		for range m.CarrierSize {
 			if bit {
-				modulatedData = append(modulatedData, -0x7FFFFFFF)
+				modulatedData = append(modulatedData, -m.Amplitude)
 			} else {
-				modulatedData = append(modulatedData, 0x7FFFFFFF)
+				modulatedData = append(modulatedData, m.Amplitude)
 			}
 		}
 	}
