@@ -3,6 +3,7 @@ package main
 import (
 	"Aethernet/cmd/project2/task2/config"
 	"Aethernet/internel/utils"
+	"fmt"
 )
 
 func main() {
@@ -10,9 +11,13 @@ func main() {
 	layer := &config.Layer
 	layer.Address = 0x02
 	layer.Open()
-	outputBytes := layer.Receive()
-	layer.Close()
+	defer layer.Close()
 
-	utils.WriteBinary("OUTPUT.bin", outputBytes)
+	select {
+	case outputBytes := <-layer.ReceiveAsync():
+		fmt.Printf("Received %d bytes\n", len(outputBytes))
+		utils.WriteBinary("OUTPUT.bin", outputBytes)
+	case <-utils.WaitEnterAsync():
+	}
 
 }

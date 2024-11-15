@@ -171,6 +171,7 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 		Destination: address,
 		Type:        MACTypeData,
 	}
+
 	for i := 0; i < len(data); i += packetLength {
 		end := min(i+packetLength, len(data))
 		if end == len(data) {
@@ -179,7 +180,7 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 		packet := append(header.ToBytes(), data[i:end]...)
 		fmt.Printf("[MAC%x] Making packet %d, length %d\n", m.Address, header.Index, len(packet))
 		packets = append(packets, packet)
-		header.Index++
+		header.Index++ // NOTE: this is uint8, so it may overflow
 	}
 
 	// send the packets
@@ -241,6 +242,14 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 
 	return nil
 
+}
+
+func (m *MACLayer) SendAsync(address MACAddress, data []byte) <-chan error {
+	done := make(chan error)
+	go func() {
+		done <- m.Send(address, data)
+	}()
+	return done
 }
 
 func (m *MACLayer) Receive() []byte {

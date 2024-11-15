@@ -3,16 +3,28 @@ package main
 import (
 	"Aethernet/cmd/project2/task2/config"
 	"Aethernet/internel/utils"
+	"fmt"
 )
 
 func main() {
 
-	inputBytes, _ := utils.ReadBinary[byte]("INPUT.bin")
+	inputBytes, err := utils.ReadBinary[byte]("INPUT.bin")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	layer := &config.Layer
 	layer.Address = 0x01
 	layer.Open()
-	layer.Send(0x02, inputBytes)
-	layer.Close()
+	defer layer.Close()
+
+	select {
+	case err := <-layer.SendAsync(0x02, inputBytes):
+		if err != nil {
+			fmt.Println(err)
+		}
+	case <-utils.WaitEnterAsync():
+	}
 
 }
