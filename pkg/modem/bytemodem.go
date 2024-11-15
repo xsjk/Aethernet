@@ -1,6 +1,7 @@
 package modem
 
 import (
+	"Aethernet/pkg/async"
 	"Aethernet/pkg/fixed"
 	"fmt"
 	"sync"
@@ -47,7 +48,7 @@ type Demodulator struct {
 	CorrectionThreshold      fixed.T
 	DemodulatePowerThreshold fixed.T
 	OutputChan               chan []byte // demodulated data
-	ErrorHandler             func(error)
+	errorSignal              async.Signal[struct{}]
 
 	once sync.Once
 
@@ -335,9 +336,18 @@ func (d *Demodulator) receiveCRC(currentSample byte) {
 }
 
 func (d *Demodulator) raise(err error) {
-	if d.ErrorHandler == nil {
-		panic("No error handler for Demodulator is set")
-	} else {
-		d.ErrorHandler(err)
+	// Signal the decode error
+	if d.errorSignal != nil {
+		select {
+		case <-d.errorSignal:
+		default:
+			// d.errorSignal <- err
+			close(d.errorSignal)
+		}
 	}
+}
+
+func (d *Demodulator) WaitForError() <-chan struct{} {
+	d.errorSignal = make(chan struct{})
+	return d.errorSignal
 }

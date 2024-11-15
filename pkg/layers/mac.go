@@ -1,6 +1,7 @@
 package layers
 
 import (
+	"Aethernet/pkg/async"
 	"fmt"
 	"time"
 
@@ -80,10 +81,8 @@ type MACLayer struct {
 	MaxRetries   int
 	BackoffTimer BackoffTimer
 
-	decodeError chan struct{}
-
 	// Send
-	receivedACK   chan struct{}
+	receivedACK   async.Signal[struct{}]
 	expectedIndex uint8
 
 	// Receive
@@ -103,19 +102,6 @@ func (m *MACLayer) Open() {
 			}
 		}
 	}()
-	m.Decoder.Demodulator.ErrorHandler = func(err error) {
-		fmt.Printf("[MAC%x] Decode error: %s\n", m.Address, err)
-
-		// Signal the decode error
-		if m.decodeError != nil {
-			select {
-			case <-m.decodeError:
-			default:
-				close(m.decodeError)
-			}
-		}
-
-	}
 }
 
 func (m *MACLayer) handle(header MACHeader, data []byte) {
@@ -145,13 +131,7 @@ func (m *MACLayer) handle(header MACHeader, data []byte) {
 		// check the index with the current sending packet
 		fmt.Printf("[MAC%x] ACK for packet %d received\n", m.Address, header.Index)
 		if m.expectedIndex == header.Index {
-			if m.receivedACK != nil {
-				select {
-				case <-m.receivedACK:
-				default:
-					close(m.receivedACK)
-				}
-			}
+			m.receivedACK.Notify()
 		} else {
 			fmt.Printf("[MAC%x] ACK for packet %d is not expected, expected %d\n", m.Address, header.Index, m.expectedIndex)
 			// panic("ACK for packet is not expected")
@@ -195,10 +175,9 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
 
 			// send the packet
-			m.decodeError = make(chan struct{})
 			select {
 			case <-m.PhysicalLayer.SendAsync(packet):
-			case <-m.decodeError:
+			case <-m.Decoder.Demodulator.WaitForError():
 				// Decode error while sending the packet
 				fmt.Printf("[MAC%x] Decode error while ending packet %d, possibly due to collision\n", m.Address, i)
 				// Collision detected, resend the packet after a random backoff time
@@ -210,10 +189,9 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 			}
 
 			// wait for the ACK
-			m.receivedACK = make(chan struct{})
 			m.expectedIndex = uint8(i)
 			select {
-			case <-m.receivedACK:
+			case <-m.receivedACK.Await():
 				// ACK received
 				break resendLoop
 			case <-time.After(m.ACKTimeout):
