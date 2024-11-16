@@ -22,11 +22,11 @@ func (s *Signal[T]) NotifyValue(value T) {
 	}
 }
 
-func (s *Signal[T]) Await() <-chan T {
+func (s *Signal[T]) Signal() <-chan T {
 	*s = make(chan T)
 	return *s
 }
 
 func (s *Signal[T]) Wait() T {
-	return <-s.Await()
+	return <-s.Signal()
 }

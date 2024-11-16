@@ -66,8 +66,8 @@ func (d *Decoder) Init() {
 	d.buffer = make(chan []int32, d.BufferSize)
 }
 
-func (d *Decoder) WaitForError() <-chan error {
-	return d.Demodulator.WaitForError()
+func (d *Decoder) ErrorSignal() <-chan error {
+	return d.Demodulator.ErrorSignal()
 }
 
 func (e *Encoder) Init() {
@@ -98,8 +98,8 @@ func (p *PhysicalLayer) IsSending() bool {
 	return p.Encoder.current != nil || len(p.Encoder.buffer) > 0
 }
 
-func (p *PhysicalLayer) WaitForDecodeError() <-chan error {
-	return p.Decoder.WaitForError()
+func (p *PhysicalLayer) DecodeErrorSignal() <-chan error {
+	return p.Decoder.ErrorSignal()
 }
 
 func (p *PhysicalLayer) CancelSend() {
@@ -146,8 +146,8 @@ func (p *PhysicalLayer) IsBusy() bool {
 	return p.PowerMonitor.IsBusy()
 }
 
-func (p *PhysicalLayer) WaitForNotBusy() <-chan struct{} {
-	return p.PowerMonitor.WaitAsync()
+func (p *PhysicalLayer) PowerFreeSignal() <-chan struct{} {
+	return p.PowerMonitor.NotBusySignal()
 }
 
 // try to decode the input and put the result into the Buffer which shares with the some other goroutines
@@ -207,8 +207,7 @@ func (e *Encoder) write(out []int32) {
 	}
 }
 
-// send the data to the device
-// the function will block until the data is fully sent
+// sends data to the device and returns a boolean channel to indicate whether the data has been sent or cancelled
 func (e *Encoder) sendAsync(data []byte) <-chan bool {
 	done := make(chan bool, 1)
 	e.buffer <- EncoderFrame{
@@ -245,8 +244,8 @@ func (b *PowerMonitor) Update(in []int32) {
 	// fmt.Printf("[PowerMonitor] Power: %.2f, Threshold: %.2f, Busy: %t\n", b.Power.Float(), b.Threshold.Float(), b.IsBusy())
 }
 
-func (b *PowerMonitor) WaitAsync() <-chan struct{} {
-	return b.notBusy.Await()
+func (b *PowerMonitor) NotBusySignal() <-chan struct{} {
+	return b.notBusy.Signal()
 }
 
 func (b *PowerMonitor) IsBusy() bool {

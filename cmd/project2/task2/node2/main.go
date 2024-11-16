@@ -3,6 +3,7 @@ package main
 import (
 	"Aethernet/cmd/project2/task2/config"
 	"Aethernet/internel/utils"
+	"Aethernet/pkg/async"
 	"fmt"
 )
 
@@ -17,7 +18,7 @@ func main() {
 	case outputBytes := <-layer.ReceiveAsync():
 		fmt.Printf("Received %d bytes\n", len(outputBytes))
 		utils.WriteBinary("OUTPUT.bin", outputBytes)
-	case <-utils.WaitEnterAsync():
+	case <-async.EnterKey():
 	}
 
 }

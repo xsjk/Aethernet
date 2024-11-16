@@ -21,7 +21,7 @@ func TestSignal_Await(t *testing.T) {
 	var s Signal[struct{}]
 
 	select {
-	case <-s.Await():
+	case <-s.Signal():
 		t.Error("Expected channel to be open")
 	default:
 		// Success
@@ -37,7 +37,7 @@ func TestSignal_NotifyAndAwait(t *testing.T) {
 	}()
 
 	select {
-	case val := <-s.Await():
+	case val := <-s.Signal():
 		if val != 42 {
 			t.Errorf("Expected 42 but got %d", val)
 		}

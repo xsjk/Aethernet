@@ -1,11 +1,11 @@
-package utils
+package async
 
 import (
 	"bufio"
 	"os"
 )
 
-func WaitEnterAsync() <-chan struct{} {
+func EnterKey() <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		bufio.NewReader(os.Stdin).ReadBytes('\n')

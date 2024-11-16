@@ -6,31 +6,25 @@ import (
 )
 
 func TestAwait(t *testing.T) {
-	done := Await(func() {
+	f1 := Promise(func() int {
 		time.Sleep(100 * time.Millisecond)
+		return 1
+	})
+	f2 := Promise(func() int {
+		time.Sleep(200 * time.Millisecond)
+		return 2
+	})
+	f3 := Promise(func() int {
+		time.Sleep(300 * time.Millisecond)
+		return 3
 	})
 
-	select {
-	case <-done:
-		// Test passed
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("TestAwait timed out")
-	}
-}
+	startTime := time.Now()
+	r1, r2, r3 := Await3(Gather3(f1, f2, f3))
+	elapsedTime := time.Since(startTime)
+	t.Logf("elapsed time: %v", elapsedTime)
 
-func TestAwaitResult(t *testing.T) {
-	expected := 42
-	resultChan := AwaitResult(func() int {
-		time.Sleep(100 * time.Millisecond)
-		return expected
-	})
-
-	select {
-	case result := <-resultChan:
-		if result != expected {
-			t.Fatalf("Expected %d but got %d", expected, result)
-		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("TestAwaitResult timed out")
+	if r1 != 1 || r2 != 2 || r3 != 3 {
+		t.Errorf("expected 1, 2, 3 but got %d, %d, %d", r1, r2, r3)
 	}
 }

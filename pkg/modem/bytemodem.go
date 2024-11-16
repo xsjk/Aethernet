@@ -336,7 +336,7 @@ func (d *Demodulator) raise(err error) {
 	}
 }
 
-func (d *Demodulator) WaitForError() <-chan error {
+func (d *Demodulator) ErrorSignal() <-chan error {
 	d.errorSignal = make(chan error, 1)
 	return d.errorSignal
 }

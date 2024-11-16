@@ -4,6 +4,6 @@ package modem
 
 import "fmt"
 
-func debugLog(format string, args ...interface{}) {
+func debugLog(format string, args ...any) {
 	fmt.Printf(format, args...)
 }

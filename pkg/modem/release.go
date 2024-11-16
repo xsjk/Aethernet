@@ -2,4 +2,4 @@
 
 package modem
 
-func debugLog(format string, args ...interface{}) {}
+func debugLog(format string, args ...any) {}

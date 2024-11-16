@@ -3,6 +3,7 @@ package main
 import (
 	"Aethernet/cmd/project2/task2/config"
 	"Aethernet/internel/utils"
+	"Aethernet/pkg/async"
 	"fmt"
 )
 
@@ -24,7 +25,7 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		}
-	case <-utils.WaitEnterAsync():
+	case <-async.EnterKey():
 	}
 
 }
