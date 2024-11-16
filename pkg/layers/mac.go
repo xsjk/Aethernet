@@ -76,13 +76,15 @@ func (b RandomBackoffTimer) GetBackoffTime(retries int) time.Duration {
 type MACLayer struct {
 	PhysicalLayer
 
+	BytePerFrame int
+
 	Address      MACAddress
 	ACKTimeout   time.Duration
 	MaxRetries   int
 	BackoffTimer BackoffTimer
 
 	// Send
-	receivedACK   async.Signal[struct{}]
+	receivedACK   chan struct{}
 	expectedIndex uint8
 
 	// Receive
@@ -92,6 +94,7 @@ type MACLayer struct {
 
 func (m *MACLayer) Open() {
 	m.PhysicalLayer.Open()
+	m.receivedACK = make(chan struct{})
 	go func() {
 		for {
 			packet := m.PhysicalLayer.Receive()
@@ -131,7 +134,22 @@ func (m *MACLayer) handle(header MACHeader, data []byte) {
 		// check the index with the current sending packet
 		fmt.Printf("[MAC%x] ACK for packet %d received\n", m.Address, header.Index)
 		if m.expectedIndex == header.Index {
-			m.receivedACK.Notify()
+
+			// make sure m.receiveACK is not closed
+			select {
+			case <-m.receivedACK:
+				panic("m.receivedACK is not open")
+			default:
+			}
+
+			select {
+			case m.receivedACK <- struct{}{}:
+				// Someone is waiting for the ACK
+			default:
+				// Nobody is waiting for the data to be sent now (we arrive here too early)
+				close(m.receivedACK)
+			}
+			// fmt.Printf("[MAC%x] ACK Notify End %v\n", m.Address, r)
 		} else {
 			fmt.Printf("[MAC%x] ACK for packet %d is not expected, expected %d\n", m.Address, header.Index, m.expectedIndex)
 			// panic("ACK for packet is not expected")
@@ -141,7 +159,11 @@ func (m *MACLayer) handle(header MACHeader, data []byte) {
 
 func (m *MACLayer) Send(address MACAddress, data []byte) error {
 	// TODO: lock the sending process, so that only one sending process is allowed to call this function at a time
-	packetLength := m.PhysicalLayer.Encoder.Modulator.BytePerFrame - MACHeader{}.NumBytes()
+	// packetLength := m.PhysicalLayer.Encoder.Modulator.BytePerFrame - MACHeader{}.NumBytes()
+	if m.BytePerFrame == 0 {
+		m.BytePerFrame = m.PhysicalLayer.Encoder.Modulator.BytePerFrame - MACHeader{}.NumBytes()
+		fmt.Printf("[MAC%x] Payload length is not set, using default value %d", m.Address, m.BytePerFrame)
+	}
 
 	// split the data into packets (do not use physical layer's packet splitting)
 	packets := make([][]byte, 0)
@@ -151,8 +173,8 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 		Type:        MACTypeData,
 	}
 
-	for i := 0; i < len(data); i += packetLength {
-		end := min(i+packetLength, len(data))
+	for i := 0; i < len(data); i += m.BytePerFrame {
+		end := min(i+m.BytePerFrame, len(data))
 		if end == len(data) {
 			header.IsLast = true
 		}
@@ -167,14 +189,15 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 		retries := 0
 	resend:
 		for {
-			// wait for the physical layer to be not busy
-			<-m.PowerFreeSignal()
+			// // wait for the physical layer to be not busy
+			// <-m.PowerFreeSignal()
 
 			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
 
-			// send the packet
 			select {
-			case <-m.PhysicalLayer.SendAsync(packet):
+			case status := <-m.PhysicalLayer.SendAsync(packet):
+				fmt.Printf("[MAC%x] Packet %d sent to physical layer status %v\n", m.Address, i, status)
+
 			case err := <-m.PhysicalLayer.DecodeErrorSignal():
 				fmt.Printf("[MAC%x] Decode error %v while sending packet %d, possibly due to collision\n\n", m.Address, err, i)
 				// Collision detected, resend the packet after a random backoff time
@@ -189,9 +212,14 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 			}
 
 			// wait for the ACK
+			fmt.Printf("[MAC%x] is waiting for ACK", m.Address)
 			m.expectedIndex = uint8(i)
 			select {
-			case <-m.receivedACK.Signal():
+			case _, ok := <-m.receivedACK:
+				if !ok {
+					// Channel was closed since the ACK was detected before we are waiting it, reopen the channel
+					m.receivedACK = make(chan struct{})
+				}
 				// ACK received
 				fmt.Printf("[MAC%x] Packet %d sent and ACK received\n", m.Address, i)
 				break resend

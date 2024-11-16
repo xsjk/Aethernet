@@ -9,33 +9,35 @@ import (
 )
 
 const (
-	BYTE_PER_FRAME = 125
-	FRAME_INTERVAL = 256
-	CARRIER_SIZE   = 3
+	BYTE_PER_FRAME_PHY = 125 + 2
+	BYTE_PER_FRAME_MAC = 125 * 2
+
+	FRAME_INTERVAL = 800
+	CARRIER_SIZE   = 2
 	INTERVAL_SIZE  = 10
 
 	INPUT_BUFFER_SIZE  = 10000
 	OUTPUT_BUFFER_SIZE = 1
 
-	POWER_THRESHOLD = 30
+	POWER_THRESHOLD = 20
 
 	POWER_MONITOR_THRESHOLD = 0.4
 	POWER_MONITOR_WINDOW    = 10
 
-	ACK_TIMEOUT        = 1000 * time.Millisecond
-	MAX_RETRY_ATTEMPTS = 5
+	ACK_TIMEOUT        = 120 * time.Millisecond
+	MAX_RETRY_ATTEMPTS = 0
 
 	MIN_BACKOFF = 0
 	MAX_BACKOFF = 100 * time.Millisecond
 
-	DATA_AMPLITUDE    = 0x7fffffff
+	DATA_AMPLITUDE    = 0x5fffffff
 	PRAMBLE_AMPLITUDE = 0x7fffffff
 
 	// SAMPLE_RATE = 48000
 	SAMPLE_RATE = 44100
 )
 
-var Preamble = modem.DigitalChripConfig{N: 5, Amplitude: 0x7fffffff}.New()
+var Preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
 
 var Device = &device.ASIOMono{
 	DeviceName: "ASIO4ALL v2",
@@ -43,6 +45,7 @@ var Device = &device.ASIOMono{
 }
 
 var Layer = layers.MACLayer{
+	BytePerFrame: BYTE_PER_FRAME_MAC,
 	PhysicalLayer: layers.PhysicalLayer{
 		Device: Device,
 		Decoder: layers.Decoder{
@@ -58,7 +61,7 @@ var Layer = layers.MACLayer{
 			Modulator: modem.Modulator{
 				Preamble:      Preamble,
 				CarrierSize:   CARRIER_SIZE,
-				BytePerFrame:  BYTE_PER_FRAME,
+				BytePerFrame:  BYTE_PER_FRAME_PHY,
 				FrameInterval: FRAME_INTERVAL,
 				Amplitude:     DATA_AMPLITUDE,
 			},

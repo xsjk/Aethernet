@@ -45,6 +45,7 @@ type Config struct {
 	} `yaml:"physical_layer"`
 
 	MACLayer struct {
+		BytePerFrame     int           `yaml:"byte_per_frame"`
 		AckTimeout       time.Duration `yaml:"ack_timeout"`
 		MaxRetryAttempts int           `yaml:"max_retry_attempts"`
 		BackoffTimer     struct {
@@ -79,6 +80,7 @@ func CreateMACLayer(config *Config) *layers.MACLayer {
 	}
 
 	var layer = layers.MACLayer{
+		BytePerFrame: config.MACLayer.BytePerFrame,
 		PhysicalLayer: layers.PhysicalLayer{
 			Device: Device,
 			Decoder: layers.Decoder{

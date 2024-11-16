@@ -30,7 +30,7 @@ type Decoder struct {
 
 type EncoderFrame struct {
 	Data []int32
-	Done chan bool
+	Done chan bool // a channel with buffer size 1 to notify the sender that the data has been sent
 }
 
 type Encoder struct {
@@ -210,9 +210,13 @@ func (e *Encoder) write(out []int32) {
 // sends data to the device and returns a boolean channel to indicate whether the data has been sent or cancelled
 func (e *Encoder) sendAsync(data []byte) <-chan bool {
 	done := make(chan bool, 1)
-	e.buffer <- EncoderFrame{
+	select {
+	case e.buffer <- EncoderFrame{
 		Data: e.Modulator.Modulate(data),
 		Done: done,
+	}:
+	default:
+		panic("outputBuffer is full")
 	}
 	return done
 }

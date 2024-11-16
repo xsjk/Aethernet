@@ -325,17 +325,18 @@ func (d *Demodulator) receiveCRC(currentSample byte) {
 }
 
 func (d *Demodulator) raise(err error) {
+	if d.errorSignal == nil {
+		return
+	}
+
 	// Signal the decode error
-	if d.errorSignal != nil {
-		select {
-		case <-d.errorSignal:
-		default:
-			d.errorSignal <- err
-		}
+	select {
+	case d.errorSignal <- err:
+	default:
 	}
 }
 
 func (d *Demodulator) ErrorSignal() <-chan error {
-	d.errorSignal = make(chan error, 1)
+	d.errorSignal = make(chan error)
 	return d.errorSignal
 }
