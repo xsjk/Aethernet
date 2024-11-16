@@ -8,83 +8,124 @@ import (
 	"Aethernet/pkg/layers"
 	"Aethernet/pkg/modem"
 	"fmt"
+	"os"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
-const (
-	BYTE_PER_FRAME = 125
-	FRAME_INTERVAL = 256
-	CARRIER_SIZE   = 3
-	INTERVAL_SIZE  = 10
-	PAYLOAD_SIZE   = 32
+type Config struct {
+	Device struct {
+		DeviceName string  `yaml:"device_name"`
+		SampleRate float64 `yaml:"sample_rate"`
+	} `yaml:"device"`
 
-	INPUT_BUFFER_SIZE  = 10000
-	OUTPUT_BUFFER_SIZE = 1
+	PhysicalLayer struct {
+		BytePerFrame  int `yaml:"byte_per_frame"`
+		FrameInterval int `yaml:"frame_interval"`
 
-	POWER_THRESHOLD      = 30
-	CORRECTION_THRESHOLD = 0.8
+		Preamble struct {
+			Amplitude float64 `yaml:"amplitude"`
+			N         int     `yaml:"n"`
+			Threshold float64 `yaml:"threshold"`
+		} `yaml:"preamble"`
 
-	POWER_MONITOR_THRESHOLD = 0.4
-	POWER_MONITOR_WINDOW    = 10
+		Carrier struct {
+			Amplitude float64 `yaml:"amplitude"`
+			Size      int     `yaml:"size"`
+		} `yaml:"carrier"`
 
-	ACK_TIMEOUT        = 1000 * time.Millisecond
-	MAX_RETRY_ATTEMPTS = 5
+		InputBufferSize  int `yaml:"input_buffer_size"`
+		OutputBufferSize int `yaml:"output_buffer_size"`
 
-	MIN_BACKOFF = 0
-	MAX_BACKOFF = 100 * time.Millisecond
+		PowerMonitor struct {
+			Threshold float64 `yaml:"threshold"`
+			Window    int     `yaml:"window"`
+		} `yaml:"power_monitor"`
+	} `yaml:"physical_layer"`
 
-	DATA_AMPLITUDE    = 0x7fffffff
-	PRAMBLE_AMPLITUDE = 0x7fffffff
-
-	// SAMPLE_RATE = 48000
-	SAMPLE_RATE = 44100
-)
-
-var Preamble = modem.DigitalChripConfig{N: 5, Amplitude: 0x7fffffff}.New()
-
-var Device = &device.ASIOMono{
-	DeviceName: "ASIO4ALL v2",
-	SampleRate: SAMPLE_RATE,
+	MACLayer struct {
+		AckTimeout       time.Duration `yaml:"ack_timeout"`
+		MaxRetryAttempts int           `yaml:"max_retry_attempts"`
+		BackoffTimer     struct {
+			MinBackoff time.Duration `yaml:"min_backoff"`
+			MaxBackoff time.Duration `yaml:"max_backoff"`
+		} `yaml:"backoff_timer"`
+	} `yaml:"mac_layer"`
 }
 
-var Layer = layers.MACLayer{
-	PhysicalLayer: layers.PhysicalLayer{
-		Device: Device,
-		Decoder: layers.Decoder{
-			Demodulator: modem.Demodulator{
-				Preamble:                 Preamble,
-				CarrierSize:              CARRIER_SIZE,
-				CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
-				DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
-				OutputChan:               make(chan []byte, 10),
+func LoadConfig(filename string) (*Config, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+func CreateMACLayer(config *Config) *layers.MACLayer {
+
+	var Preamble = modem.DigitalChripConfig{N: config.PhysicalLayer.Preamble.N, Amplitude: int32(config.PhysicalLayer.Preamble.Amplitude * 0x7fffffff)}.New()
+
+	var Device = &device.ASIOMono{
+		DeviceName: config.Device.DeviceName,
+		SampleRate: config.Device.SampleRate,
+	}
+
+	var layer = layers.MACLayer{
+		PhysicalLayer: layers.PhysicalLayer{
+			Device: Device,
+			Decoder: layers.Decoder{
+				Demodulator: modem.Demodulator{
+					Preamble:                 Preamble,
+					CarrierSize:              config.PhysicalLayer.Carrier.Size,
+					DemodulatePowerThreshold: fixed.FromFloat(config.PhysicalLayer.Preamble.Threshold),
+					OutputChan:               make(chan []byte, 10),
+				},
+				BufferSize: config.PhysicalLayer.InputBufferSize,
 			},
-			BufferSize: INPUT_BUFFER_SIZE,
-		},
-		Encoder: layers.Encoder{
-			Modulator: modem.Modulator{
-				Preamble:      Preamble,
-				CarrierSize:   CARRIER_SIZE,
-				BytePerFrame:  BYTE_PER_FRAME,
-				FrameInterval: FRAME_INTERVAL,
-				Amplitude:     DATA_AMPLITUDE,
+			Encoder: layers.Encoder{
+				Modulator: modem.Modulator{
+					Preamble:      Preamble,
+					CarrierSize:   config.PhysicalLayer.Carrier.Size,
+					BytePerFrame:  config.PhysicalLayer.BytePerFrame,
+					FrameInterval: config.PhysicalLayer.FrameInterval,
+					Amplitude:     int32(config.PhysicalLayer.Carrier.Amplitude * 0x7fffffff),
+				},
+				BufferSize: config.PhysicalLayer.OutputBufferSize,
 			},
-			BufferSize: OUTPUT_BUFFER_SIZE,
+			PowerMonitor: layers.PowerMonitor{
+				Threshold:  fixed.FromFloat(config.PhysicalLayer.PowerMonitor.Threshold),
+				WindowSize: config.PhysicalLayer.PowerMonitor.Window,
+			},
 		},
-		PowerMonitor: layers.PowerMonitor{
-			Threshold:  fixed.FromFloat(POWER_MONITOR_THRESHOLD),
-			WindowSize: POWER_MONITOR_WINDOW,
+		ACKTimeout: config.MACLayer.AckTimeout,
+		MaxRetries: config.MACLayer.MaxRetryAttempts,
+		BackoffTimer: layers.RandomBackoffTimer{
+			MinDelay: config.MACLayer.BackoffTimer.MinBackoff,
+			MaxDelay: config.MACLayer.BackoffTimer.MaxBackoff,
 		},
-	},
-	ACKTimeout: ACK_TIMEOUT,
-	MaxRetries: MAX_RETRY_ATTEMPTS,
-	BackoffTimer: layers.RandomBackoffTimer{
-		MinDelay: MIN_BACKOFF,
-		MaxDelay: MAX_BACKOFF,
-	},
-	OutputChan: make(chan []byte, 10),
+		OutputChan: make(chan []byte, 10),
+	}
+
+	return &layer
 }
 
 func Main(myAddress, targetAddress layers.MACAddress) {
+
+	config, err := LoadConfig("config.yml")
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Config: %+v\n", config)
 
 	inputFile := fmt.Sprintf("INPUT%dto%d.bin", myAddress, targetAddress)
 	outputFile := fmt.Sprintf("OUTPUT%dto%d.bin", targetAddress, myAddress)
@@ -96,12 +137,13 @@ func Main(myAddress, targetAddress layers.MACAddress) {
 		return
 	}
 
-	Layer.Address = myAddress
-	Layer.Open()
-	defer Layer.Close()
+	layer := CreateMACLayer(config)
+	layer.Address = myAddress
+	layer.Open()
+	defer layer.Close()
 
 	go func() {
-		outputBytes := Layer.Receive()
+		outputBytes := layer.Receive()
 		fmt.Printf("Received %d bytes at %s\n", len(outputBytes), time.Now().Format(time.RFC3339))
 		utils.WriteBinary(outputFile, outputBytes)
 		fmt.Printf("Output written to %s\n", outputFile)
@@ -112,7 +154,7 @@ func Main(myAddress, targetAddress layers.MACAddress) {
 
 	go func() {
 		startTime := time.Now()
-		err := Layer.Send(targetAddress, inputBytes)
+		err := layer.Send(targetAddress, inputBytes)
 		if err != nil {
 			fmt.Printf("Error sending packet: %v\n", err)
 		} else {

@@ -21,8 +21,7 @@ func TestPhysicalLayer(t *testing.T) {
 		INPUT_BUFFER_SIZE  = 10000
 		OUTPUT_BUFFER_SIZE = 1
 
-		POWER_THRESHOLD      = 30
-		CORRECTION_THRESHOLD = 0.8
+		POWER_THRESHOLD = 30
 
 		POWER_MONITOR_THRESHOLD = 0.5
 		POWER_MONITOR_WINDOW    = 10
@@ -36,7 +35,6 @@ func TestPhysicalLayer(t *testing.T) {
 			Demodulator: modem.Demodulator{
 				Preamble:                 preamble,
 				CarrierSize:              CARRIER_SIZE,
-				CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
 				DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
 				OutputChan:               make(chan []byte, 10),
 			},

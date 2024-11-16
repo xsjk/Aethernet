@@ -46,7 +46,6 @@ type Demodulator struct {
 	Preamble    []int32
 	CarrierSize int // the size of the carrier
 
-	CorrectionThreshold      fixed.T
 	DemodulatePowerThreshold fixed.T
 	OutputChan               chan []byte // demodulated data
 	errorSignal              async.Signal[error]

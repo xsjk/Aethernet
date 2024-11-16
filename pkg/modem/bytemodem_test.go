@@ -16,8 +16,7 @@ func TestNaiveByteModem(t *testing.T) {
 		INTERVAL_SIZE  = 10
 		PAYLOAD_SIZE   = 32
 
-		POWER_THRESHOLD      = 10
-		CORRECTION_THRESHOLD = 0.8
+		POWER_THRESHOLD = 10
 	)
 
 	var preamble = DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
@@ -32,7 +31,6 @@ func TestNaiveByteModem(t *testing.T) {
 		Demodulator: Demodulator{
 			Preamble:                 preamble,
 			CarrierSize:              CARRIER_SIZE,
-			CorrectionThreshold:      fixed.FromFloat(CORRECTION_THRESHOLD),
 			DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
 			OutputChan:               make(chan []byte, 10),
 		},
