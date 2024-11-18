@@ -4,7 +4,7 @@ package fixed
 type T int32
 
 const (
-	D     = 6
+	D     = 20
 	N     = 31 - D
 	Denom = 1 << D
 
