@@ -256,6 +256,10 @@ func (b *PowerMonitor) IsBusy() bool {
 	return b.Power > b.Threshold
 }
 
+func (b *PowerMonitor) Log() {
+	fmt.Printf("[PowerMonitor] Power: %.2f, Threshold: %.2f, Busy: %t\n", b.Power.Float(), b.Threshold.Float(), b.IsBusy())
+}
+
 func (b *PowerMonitor) Reset() {
 	b.latest = nil
 	b.sum = 0

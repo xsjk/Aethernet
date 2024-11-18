@@ -191,7 +191,7 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 		for {
 			// // wait for the physical layer to be not busy
 			// <-m.PowerFreeSignal()
-
+			m.PowerMonitor.Log()
 			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
 
 			select {
