@@ -60,6 +60,7 @@ type Demodulator struct {
 	currentWindow              []int32
 	frameToDecode              []int32 // since preamble is late detected, we need to store the frames when confirming a potential start of the signal for later data extraction
 	powerPrev                  fixed.T
+	lastPoppedSample           int32
 	localMaxPower              fixed.T
 	localMaxPowerPrev          fixed.T
 	adjustment                 fixed.T
@@ -226,7 +227,7 @@ func estimateAdjustment(pl, pm, pr fixed.T) (adj fixed.T) {
 	} else {
 		adj = (pm + pl).Div(pm+pr) - fixed.One
 	}
-	fmt.Printf("Estimate adjustment with %.3f, %.3f, %.3f: %.3f\n", pl.Float(), pm.Float(), pr.Float(), adj.Float())
+	// fmt.Printf("Estimate adjustment with %.3f, %.3f, %.3f: %.3f\n", pl.Float(), pm.Float(), pr.Float(), adj.Float())
 	return
 }
 
@@ -248,7 +249,7 @@ func (d *Demodulator) detectPreamble(currentSample int32) (err error) {
 	if power > d.localMaxPower && power > d.DemodulatePowerThreshold {
 		debugLog("[Demodulation] find a potential start of the signal where power: %.2f\n", fixed.T(power).Float())
 		d.localMaxPower = power
-		d.localMaxPowerPrev = dotProduct(d.currentWindow, d.Preamble[2:]) + fixed.T((int64(poppedSample)*int64(d.Preamble[1]))>>(31+fixed.N))
+		d.localMaxPowerPrev = d.powerPrev - fixed.T((int64(d.lastPoppedSample)*int64(d.Preamble[0]))>>(31+fixed.N))
 		d.frameToDecode = d.frameToDecode[:0]
 		d.distanceFromPotentialStart = 0
 
@@ -261,18 +262,15 @@ func (d *Demodulator) detectPreamble(currentSample int32) (err error) {
 		d.frameToDecode = append(d.frameToDecode, currentSample)
 		if d.distanceFromPotentialStart == 0 {
 
-			dotProductLatter := dotProduct(d.currentWindow, d.Preamble[1:len(d.Preamble)-1])
-
-			d.adjustment = estimateAdjustment(d.localMaxPowerPrev, d.localMaxPower, dotProductLatter+fixed.T((int64(poppedSample)*int64(d.Preamble[0]))>>(31+fixed.N)))
+			dotProductLatter := power - fixed.T((int64(d.currentWindow[len(d.Preamble)-2])*int64(d.Preamble[len(d.Preamble)-1]))>>(31+fixed.N))
+			d.adjustment = estimateAdjustment(d.localMaxPowerPrev, d.localMaxPower, dotProductLatter)
 			if d.adjustment > 0 {
 				d.resampler.P = d.adjustment
-				d.resampler.LastSample = fixed.T(d.frameToDecode[1] >> fixed.N)
-				d.frameToDecode = d.frameToDecode[2:]
 			} else {
 				d.resampler.P = -d.adjustment
-				d.resampler.LastSample = fixed.T(d.frameToDecode[1] >> fixed.N)
-				d.frameToDecode = d.frameToDecode[2:]
 			}
+			d.resampler.LastSample = fixed.T(d.frameToDecode[1] >> fixed.N)
+			d.frameToDecode = d.frameToDecode[2:]
 			if d.resampler.P < 0 || d.resampler.P > fixed.One {
 				panic("Invalid adjustment")
 			}
@@ -281,13 +279,13 @@ func (d *Demodulator) detectPreamble(currentSample int32) (err error) {
 		d.distanceFromPotentialStart += 1
 	}
 	d.powerPrev = power
+	d.lastPoppedSample = poppedSample
 
 	// a real start of the signal is found
 	if d.distanceFromPotentialStart >= len(d.Preamble) {
 
 		debugLog("[Demodulation] find the start of the signal where adjustment %.2f\n", d.adjustment.Float())
 
-		// debugLog("[Demodulation] powerHistory: %v\n", d.powerHistory)
 		d.distanceFromStart = 0
 
 		// determine whether to flip
@@ -325,8 +323,8 @@ func (d *Demodulator) extractData(currentSample int32) (err error) {
 
 	cur := d.resampler.Update(fixed.T(currentSample >> fixed.N))
 
-	expectLength := ((d.currentHeader.size+1)*d.CarrierSize + 1*d.CarrierSizeForHeader) * 10
-	fmt.Printf("Extract data %d/%d: %f\n", d.distanceFromStart, expectLength, cur.Float())
+	// expectLength := ((d.currentHeader.size+1)*d.CarrierSize + 1*d.CarrierSizeForHeader) * 10
+	// fmt.Printf("Extract data %d/%d: %f\n", d.distanceFromStart, expectLength, cur.Float())
 
 	d.sum += cur
 	d.carrierTick += 1
@@ -417,7 +415,7 @@ func (d *Demodulator) receiveData(currentSample byte) (err error) {
 func (d *Demodulator) receiveCRC(currentSample byte) (err error) {
 	crcOK := d.crcChecker.Get() == currentSample
 	if crcOK {
-		debugLog("[Demodulation] CRC8 check passed\n")
+		debugLog("[Demodulation] CRC8 check passed length: %d\n", len(d.currentChunk))
 		d.currentPacket = append(d.currentPacket, d.currentChunk...)
 		if d.currentHeader.done {
 			d.OutputChan <- d.currentPacket
