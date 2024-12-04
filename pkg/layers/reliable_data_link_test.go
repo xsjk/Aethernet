@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestMACLayer(t *testing.T) {
+func TestReliableDataLinkLayer(t *testing.T) {
 
 	const (
 		SAMPLE_RATE = 48000
@@ -20,8 +20,10 @@ func TestMACLayer(t *testing.T) {
 		INTERVAL_SIZE  = 10
 		PAYLOAD_SIZE   = 32
 
-		INPUT_BUFFER_SIZE  = 10000
-		OUTPUT_BUFFER_SIZE = 1
+		INPUT_BUFFER_SIZE             = 10000
+		OUTPUT_BUFFER_SIZE            = 1
+		PHYSICAL_RECEIVE_BUFFER_SIZE  = 10
+		DATA_LINK_RECEIVE_BUFFER_SIZE = 10
 
 		POWER_THRESHOLD = 30
 
@@ -37,8 +39,8 @@ func TestMACLayer(t *testing.T) {
 
 	var preamble = modem.DigitalChripConfig{N: 4, Amplitude: 0x7fffffff}.New()
 
-	var layers [2]MACLayer
-	var addresses [2]MACAddress = [2]MACAddress{0x0, 0x1}
+	var layers [2]ReliableDataLinkLayer
+	var addresses [2]ReliableDataLinkAddress = [2]ReliableDataLinkAddress{0x0, 0x1}
 
 	network := device.Network[string]{
 		Config: device.NetworkConfig[string]{
@@ -51,7 +53,7 @@ func TestMACLayer(t *testing.T) {
 	devices := network.Build()
 
 	for i := range layers {
-		layers[i] = MACLayer{
+		layers[i] = ReliableDataLinkLayer{
 			PhysicalLayer: PhysicalLayer{
 				Device: devices[i],
 				Decoder: Decoder{
@@ -59,6 +61,7 @@ func TestMACLayer(t *testing.T) {
 						Preamble:                 preamble,
 						CarrierSize:              CARRIER_SIZE,
 						DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
+						BufferSize:               PHYSICAL_RECEIVE_BUFFER_SIZE,
 					},
 					BufferSize: INPUT_BUFFER_SIZE,
 				},
@@ -83,6 +86,7 @@ func TestMACLayer(t *testing.T) {
 				MinDelay: MIN_BACKOFF,
 				MaxDelay: MAX_BACKOFF,
 			},
+			BufferSize: DATA_LINK_RECEIVE_BUFFER_SIZE,
 		}
 	}
 

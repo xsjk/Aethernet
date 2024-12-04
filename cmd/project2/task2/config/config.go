@@ -44,7 +44,7 @@ var Device = &device.ASIOMono{
 	SampleRate: SAMPLE_RATE,
 }
 
-var Layer = layers.MACLayer{
+var Layer = layers.ReliableDataLinkLayer{
 	BytePerFrame: BYTE_PER_FRAME_MAC,
 	PhysicalLayer: layers.PhysicalLayer{
 		Device: Device,

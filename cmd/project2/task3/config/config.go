@@ -72,7 +72,7 @@ func LoadConfig(filename string) (*Config, error) {
 	return &config, nil
 }
 
-func CreateMACLayer(config *Config) *layers.MACLayer {
+func CreateMACLayer(config *Config) *layers.ReliableDataLinkLayer {
 
 	var Preamble = modem.DigitalChripConfig{N: config.PhysicalLayer.Preamble.N, Amplitude: int32(config.PhysicalLayer.Preamble.Amplitude * 0x7fffffff)}.New()
 
@@ -81,7 +81,7 @@ func CreateMACLayer(config *Config) *layers.MACLayer {
 		SampleRate: config.Device.SampleRate,
 	}
 
-	var layer = layers.MACLayer{
+	var layer = layers.ReliableDataLinkLayer{
 		BytePerFrame: config.MACLayer.BytePerFrame,
 		PhysicalLayer: layers.PhysicalLayer{
 			Device: Device,
@@ -121,7 +121,7 @@ func CreateMACLayer(config *Config) *layers.MACLayer {
 	return &layer
 }
 
-func Main(myAddress, targetAddress layers.MACAddress) {
+func Main(myAddress, targetAddress layers.ReliableDataLinkAddress) {
 
 	config, err := LoadConfig("config.yml")
 	if err != nil {

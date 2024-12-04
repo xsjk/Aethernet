@@ -8,25 +8,25 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-type MACAddress uint8
+type ReliableDataLinkAddress uint8
 
-type MACType uint8
+type ReliableDataLinkType uint8
 
 const (
-	MACTypeData MACType = iota
-	MACTypeACK
+	ReliableDataLinkTypeData ReliableDataLinkType = iota
+	ReliableDataLinkTypeACK
 )
 
 // Source (3 bit) | Destination (3 bit) | Type (1 bit) | IsLast (1 bit) | Index (8 bit)
-type MACHeader struct {
-	Source      MACAddress
-	Destination MACAddress
-	Type        MACType
+type ReliableDataLinkHeader struct {
+	Source      ReliableDataLinkAddress
+	Destination ReliableDataLinkAddress
+	Type        ReliableDataLinkType
 	IsLast      bool
 	Index       uint8
 }
 
-func (m MACHeader) Validate() {
+func (m ReliableDataLinkHeader) Validate() {
 	if m.Source&0x7 != m.Source {
 		panic("Invalid source address")
 	}
@@ -38,7 +38,7 @@ func (m MACHeader) Validate() {
 	}
 }
 
-func (m MACHeader) ToBytes() []byte {
+func (m ReliableDataLinkHeader) ToBytes() []byte {
 	m.Validate()
 	bytes := []byte{byte(m.Source)<<5 | byte(m.Destination)<<2 | byte(m.Type)<<1, m.Index}
 	if m.IsLast {
@@ -47,16 +47,16 @@ func (m MACHeader) ToBytes() []byte {
 	return bytes
 }
 
-func (m *MACHeader) FromBytes(data []byte) {
-	m.Source = MACAddress(data[0] >> 5)
-	m.Destination = MACAddress((data[0] >> 2) & 0x7)
-	m.Type = MACType((data[0] >> 1) & 0x1)
+func (m *ReliableDataLinkHeader) FromBytes(data []byte) {
+	m.Source = ReliableDataLinkAddress(data[0] >> 5)
+	m.Destination = ReliableDataLinkAddress((data[0] >> 2) & 0x7)
+	m.Type = ReliableDataLinkType((data[0] >> 1) & 0x1)
 	m.IsLast = (data[0] & 0x1) == 1
 	m.Index = data[1]
 	m.Validate()
 }
 
-func (m MACHeader) NumBytes() int {
+func (m ReliableDataLinkHeader) NumBytes() int {
 	return 2
 }
 
@@ -78,11 +78,11 @@ func (b RandomBackoffTimer) GetBackoffTime(retries int) time.Duration {
 	// }
 }
 
-type MACLayer struct {
+type ReliableDataLinkLayer struct {
 	PhysicalLayer
 
 	BytePerFrame int
-	Address      MACAddress
+	Address      ReliableDataLinkAddress
 	ACKTimeout   time.Duration
 	MaxRetries   int
 	BackoffTimer BackoffTimer
@@ -97,13 +97,13 @@ type MACLayer struct {
 	outputChan    chan []byte
 }
 
-func (m *MACLayer) Open() {
+func (m *ReliableDataLinkLayer) Open() {
 	m.PhysicalLayer.Open()
 	m.receivedACK = make(chan uint8, 1)
 	m.outputChan = make(chan []byte, m.BufferSize)
 	go func() {
 		for packet := range m.PhysicalLayer.ReceiveAsync() {
-			header := MACHeader{}
+			header := ReliableDataLinkHeader{}
 			header.FromBytes(packet[:header.NumBytes()])
 			if header.Destination == m.Address {
 				if len(packet) < header.NumBytes() {
@@ -116,21 +116,21 @@ func (m *MACLayer) Open() {
 	}()
 }
 
-func (m *MACLayer) sendACK(address MACAddress, index uint8) {
+func (m *ReliableDataLinkLayer) sendACK(address ReliableDataLinkAddress, index uint8) {
 	// <-m.PowerFreeSignal()
-	m.PhysicalLayer.Send(MACHeader{
+	m.PhysicalLayer.Send(ReliableDataLinkHeader{
 		Source:      m.Address,
 		Destination: address,
-		Type:        MACTypeACK,
+		Type:        ReliableDataLinkTypeACK,
 		Index:       index,
 	}.ToBytes())
 	fmt.Printf("[MAC%x] ACK for packet %d sent\n", m.Address, index)
 }
 
-func (m *MACLayer) handle(header MACHeader, data []byte) {
+func (m *ReliableDataLinkLayer) handle(header ReliableDataLinkHeader, data []byte) {
 
 	switch header.Type {
-	case MACTypeData:
+	case ReliableDataLinkTypeData:
 		if header.Index == m.expectedIndex {
 			m.currentPacket = append(m.currentPacket, data...)
 			fmt.Printf("[MAC%x] Append packet %d, length %d, total %d\n", m.Address, header.Index, len(data), len(m.currentPacket))
@@ -153,7 +153,7 @@ func (m *MACLayer) handle(header MACHeader, data []byte) {
 		} else {
 			fmt.Printf("[MAC%x] Packet %d is not expected, expected %d\n", m.Address, header.Index, m.expectedIndex)
 		}
-	case MACTypeACK:
+	case ReliableDataLinkTypeACK:
 		// check the index with the current sending packet
 		select {
 		case m.receivedACK <- header.Index:
@@ -176,20 +176,20 @@ func (m *MACLayer) handle(header MACHeader, data []byte) {
 	}
 }
 
-func (m *MACLayer) Send(address MACAddress, data []byte) error {
+func (m *ReliableDataLinkLayer) Send(address ReliableDataLinkAddress, data []byte) error {
 	// TODO: lock the sending process, so that only one sending process is allowed to call this function at a time
 	// packetLength := m.PhysicalLayer.Encoder.Modulator.BytePerFrame - MACHeader{}.NumBytes()
 	if m.BytePerFrame == 0 {
-		m.BytePerFrame = m.PhysicalLayer.Encoder.Modulator.BytePerFrame - MACHeader{}.NumBytes()
+		m.BytePerFrame = m.PhysicalLayer.Encoder.Modulator.BytePerFrame - ReliableDataLinkHeader{}.NumBytes()
 		fmt.Printf("[MAC%x] Payload length is not set, using default value %d", m.Address, m.BytePerFrame)
 	}
 
 	// split the data into packets (do not use physical layer's packet splitting)
 	packets := make([][]byte, 0)
-	header := MACHeader{
+	header := ReliableDataLinkHeader{
 		Source:      m.Address,
 		Destination: address,
-		Type:        MACTypeData,
+		Type:        ReliableDataLinkTypeData,
 	}
 
 	for i := 0; i < len(data); i += m.BytePerFrame {
@@ -318,19 +318,19 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 
 }
 
-func (m *MACLayer) SendAsync(address MACAddress, data []byte) <-chan error {
+func (m *ReliableDataLinkLayer) SendAsync(address ReliableDataLinkAddress, data []byte) <-chan error {
 	return async.Promise(func() error { return m.Send(address, data) })
 }
 
-func (m *MACLayer) Receive() []byte {
+func (m *ReliableDataLinkLayer) Receive() []byte {
 	return <-m.ReceiveAsync()
 }
 
-func (m *MACLayer) ReceiveAsync() <-chan []byte {
+func (m *ReliableDataLinkLayer) ReceiveAsync() <-chan []byte {
 	return m.outputChan
 }
 
-func (m *MACLayer) ReceiveWithTimeout(timeout time.Duration) ([]byte, error) {
+func (m *ReliableDataLinkLayer) ReceiveWithTimeout(timeout time.Duration) ([]byte, error) {
 	select {
 	case packet := <-m.ReceiveAsync():
 		return packet, nil
