@@ -35,8 +35,9 @@ type Config struct {
 			Size      int     `yaml:"size"`
 		} `yaml:"carrier"`
 
-		InputBufferSize  int `yaml:"input_buffer_size"`
-		OutputBufferSize int `yaml:"output_buffer_size"`
+		InputBufferSize   int `yaml:"input_buffer_size"`
+		OutputBufferSize  int `yaml:"output_buffer_size"`
+		ReceiveBufferSize int `yaml:"receive_buffer_size"`
 
 		PowerMonitor struct {
 			Threshold float64 `yaml:"threshold"`
@@ -52,6 +53,7 @@ type Config struct {
 			MinBackoff time.Duration `yaml:"min_backoff"`
 			MaxBackoff time.Duration `yaml:"max_backoff"`
 		} `yaml:"backoff_timer"`
+		ReceiveBufferSize int `yaml:"receive_buffer_size"`
 	} `yaml:"mac_layer"`
 }
 
@@ -87,8 +89,8 @@ func CreateMACLayer(config *Config) *layers.MACLayer {
 				Demodulator: modem.Demodulator{
 					Preamble:                 Preamble,
 					CarrierSize:              config.PhysicalLayer.Carrier.Size,
+					BufferSize:               config.PhysicalLayer.ReceiveBufferSize,
 					DemodulatePowerThreshold: fixed.FromFloat(config.PhysicalLayer.Preamble.Threshold),
-					OutputChan:               make(chan []byte, 10),
 				},
 				BufferSize: config.PhysicalLayer.InputBufferSize,
 			},
@@ -113,7 +115,7 @@ func CreateMACLayer(config *Config) *layers.MACLayer {
 			MinDelay: config.MACLayer.BackoffTimer.MinBackoff,
 			MaxDelay: config.MACLayer.BackoffTimer.MaxBackoff,
 		},
-		OutputChan: make(chan []byte, 10),
+		BufferSize: config.MACLayer.ReceiveBufferSize,
 	}
 
 	return &layer

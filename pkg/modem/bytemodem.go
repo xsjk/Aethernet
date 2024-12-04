@@ -51,13 +51,14 @@ const (
 )
 
 type Demodulator struct {
-	Preamble             []int32
-	CarrierSize          int // the size of the carrier
-	CarrierSizeForHeader int // the size of the carrier for the header
-
+	Preamble                 []int32
+	CarrierSize              int // the size of the carrier
+	CarrierSizeForHeader     int // the size of the carrier for the header
+	BufferSize               int // the size of the buffer for the output channel
 	DemodulatePowerThreshold fixed.T
-	OutputChan               chan []byte // demodulated data
-	errorSignal              async.Signal[error]
+
+	outputChan  chan []byte // demodulated data will be sent to this channel, the channel has no buffer, so the receiver must be ready to receive the data
+	errorSignal async.Signal[error]
 
 	once sync.Once
 
@@ -114,6 +115,7 @@ func (a *AdjustmentResampler) Update(currentSample fixed.T) (outputSample fixed.
 
 func (d *Demodulator) Init() {
 	d.errorSignal = make(chan error)
+	d.outputChan = make(chan []byte, d.BufferSize)
 }
 
 func (d *Demodulator) Reset() {
@@ -466,13 +468,13 @@ func (d *Demodulator) receiveCRC(currentSample byte) (err error) {
 		debugLog("[Demodulation] CRC8 check passed length %d\n", len(d.currentPacket))
 		if d.currentHeader.done {
 			select {
-			case d.OutputChan <- d.currentPacket:
+			case d.outputChan <- d.currentPacket:
 			case <-time.After(1 * time.Second):
-				panic("OutputChan is not consumed")
+				panic("outputChan is not consumed")
 				// default:
-				// 	debugLog("[Demodulation] Warning: OutputChan is full, dropping packet\n")
-				// 	<-d.OutputChan
-				// 	d.OutputChan <- d.currentPacket
+				// 	debugLog("[Demodulation] Warning: outputChan is full, dropping packet\n")
+				// 	<-d.outputChan
+				// 	d.outputChan <- d.currentPacket
 			}
 			d.currentPacket = []byte{}
 		}
@@ -510,4 +512,8 @@ func (d *Demodulator) ClearErrorSignal() {
 
 func (d *Demodulator) ErrorSignal() <-chan error {
 	return d.errorSignal
+}
+
+func (d *Demodulator) ReceiveAsync() <-chan []byte {
+	return d.outputChan
 }

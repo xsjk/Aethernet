@@ -53,7 +53,6 @@ var Layer = layers.MACLayer{
 				Preamble:                 Preamble,
 				CarrierSize:              CARRIER_SIZE,
 				DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
-				OutputChan:               make(chan []byte),
 			},
 			BufferSize: INPUT_BUFFER_SIZE,
 		},
@@ -78,5 +77,4 @@ var Layer = layers.MACLayer{
 		MinDelay: MIN_BACKOFF,
 		MaxDelay: MAX_BACKOFF,
 	},
-	OutputChan: make(chan []byte, 10),
 }

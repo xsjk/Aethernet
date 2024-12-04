@@ -82,11 +82,11 @@ type MACLayer struct {
 	PhysicalLayer
 
 	BytePerFrame int
-
 	Address      MACAddress
 	ACKTimeout   time.Duration
 	MaxRetries   int
 	BackoffTimer BackoffTimer
+	BufferSize   int
 
 	// Send
 	expectedIndex uint8
@@ -94,12 +94,13 @@ type MACLayer struct {
 
 	// Receive
 	currentPacket []byte
-	OutputChan    chan []byte
+	outputChan    chan []byte
 }
 
 func (m *MACLayer) Open() {
 	m.PhysicalLayer.Open()
 	m.receivedACK = make(chan uint8, 1)
+	m.outputChan = make(chan []byte, m.BufferSize)
 	go func() {
 		for packet := range m.PhysicalLayer.ReceiveAsync() {
 			header := MACHeader{}
@@ -137,7 +138,7 @@ func (m *MACLayer) handle(header MACHeader, data []byte) {
 			if header.IsLast {
 				m.expectedIndex = 0
 				select {
-				case m.OutputChan <- m.currentPacket:
+				case m.outputChan <- m.currentPacket:
 					fmt.Printf("[MAC%x] Packet %d received\n", m.Address, header.Index)
 				default:
 					fmt.Printf("[MAC%x] Output channel is full\n", m.Address)
@@ -326,7 +327,7 @@ func (m *MACLayer) Receive() []byte {
 }
 
 func (m *MACLayer) ReceiveAsync() <-chan []byte {
-	return m.OutputChan
+	return m.outputChan
 }
 
 func (m *MACLayer) ReceiveWithTimeout(timeout time.Duration) ([]byte, error) {

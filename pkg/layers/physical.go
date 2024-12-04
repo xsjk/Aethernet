@@ -60,9 +60,6 @@ func (d *Decoder) Mainloop() {
 
 func (d *Decoder) Init() {
 	d.Demodulator.Init()
-	if d.BufferSize == 0 {
-		d.BufferSize = 1
-	}
 	d.buffer = make(chan []int32, d.BufferSize)
 }
 
@@ -106,8 +103,12 @@ func (p *PhysicalLayer) CancelSend() {
 	p.Encoder.Reset()
 }
 
+func (p *PhysicalLayer) Receive() []byte {
+	return <-p.ReceiveAsync()
+}
+
 func (p *PhysicalLayer) ReceiveAsync() <-chan []byte {
-	return p.Decoder.Demodulator.OutputChan
+	return p.Decoder.Demodulator.ReceiveAsync()
 }
 
 func (p *PhysicalLayer) Open() {

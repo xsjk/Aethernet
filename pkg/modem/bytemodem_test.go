@@ -32,7 +32,6 @@ func TestNaiveByteModem(t *testing.T) {
 			Preamble:                 preamble,
 			CarrierSize:              CARRIER_SIZE,
 			DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
-			OutputChan:               make(chan []byte, 10),
 		},
 	}
 
@@ -41,7 +40,7 @@ func TestNaiveByteModem(t *testing.T) {
 
 	modulatedData := modem.Modulate(inputBytes)
 	go modem.Demodulate(modulatedData)
-	outputBytes := <-modem.Demodulator.OutputChan
+	outputBytes := <-modem.Demodulator.ReceiveAsync()
 
 	if !reflect.DeepEqual(inputBytes, outputBytes) {
 		t.Errorf("inputBytes and outputBytes are different")

@@ -36,7 +36,6 @@ func TestPhysicalLayer(t *testing.T) {
 				Preamble:                 preamble,
 				CarrierSize:              CARRIER_SIZE,
 				DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
-				OutputChan:               make(chan []byte, 10),
 			},
 			BufferSize: INPUT_BUFFER_SIZE,
 		},
