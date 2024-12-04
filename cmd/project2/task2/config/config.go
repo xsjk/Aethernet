@@ -9,15 +9,15 @@ import (
 )
 
 const (
-	BYTE_PER_FRAME_PHY = 125 + 2
-	BYTE_PER_FRAME_MAC = 125 * 2
+	BYTE_PER_FRAME_PHY = 125 + 1
+	BYTE_PER_FRAME_MAC = 125 * 50
 
-	FRAME_INTERVAL = 800
+	FRAME_INTERVAL = 1
 	CARRIER_SIZE   = 2
 	INTERVAL_SIZE  = 10
 
 	INPUT_BUFFER_SIZE  = 10000
-	OUTPUT_BUFFER_SIZE = 1
+	OUTPUT_BUFFER_SIZE = 100
 
 	POWER_THRESHOLD = 20
 
@@ -25,10 +25,10 @@ const (
 	POWER_MONITOR_WINDOW    = 10
 
 	ACK_TIMEOUT        = 120 * time.Millisecond
-	MAX_RETRY_ATTEMPTS = 0
+	MAX_RETRY_ATTEMPTS = 3
 
 	MIN_BACKOFF = 0
-	MAX_BACKOFF = 100 * time.Millisecond
+	MAX_BACKOFF = 1000 * time.Millisecond
 
 	DATA_AMPLITUDE    = 0x5fffffff
 	PRAMBLE_AMPLITUDE = 0x7fffffff
@@ -53,7 +53,7 @@ var Layer = layers.MACLayer{
 				Preamble:                 Preamble,
 				CarrierSize:              CARRIER_SIZE,
 				DemodulatePowerThreshold: fixed.FromFloat(POWER_THRESHOLD),
-				OutputChan:               make(chan []byte, 10),
+				OutputChan:               make(chan []byte),
 			},
 			BufferSize: INPUT_BUFFER_SIZE,
 		},

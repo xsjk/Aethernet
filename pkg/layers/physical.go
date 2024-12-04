@@ -59,7 +59,7 @@ func (d *Decoder) Mainloop() {
 }
 
 func (d *Decoder) Init() {
-	d.Demodulator.Reset()
+	d.Demodulator.Init()
 	if d.BufferSize == 0 {
 		d.BufferSize = 1
 	}
@@ -74,11 +74,11 @@ func (e *Encoder) Init() {
 	if e.BufferSize == 0 {
 		e.BufferSize = 1
 	}
+	e.buffer = make(chan EncoderFrame, e.BufferSize)
 	e.Reset()
 }
 
 func (e *Encoder) Reset() {
-	e.buffer = make(chan EncoderFrame, e.BufferSize)
 	if e.current != nil {
 		// TODO notify the sender that the data has been cancelled
 		e.current.Done <- false
@@ -106,8 +106,8 @@ func (p *PhysicalLayer) CancelSend() {
 	p.Encoder.Reset()
 }
 
-func (p *PhysicalLayer) Receive() []byte {
-	return <-p.Decoder.Demodulator.OutputChan
+func (p *PhysicalLayer) ReceiveAsync() <-chan []byte {
+	return p.Decoder.Demodulator.OutputChan
 }
 
 func (p *PhysicalLayer) Open() {
@@ -245,7 +245,7 @@ func (b *PowerMonitor) Update(in []int32) {
 	if !b.IsBusy() {
 		b.notBusy.Notify()
 	}
-	// fmt.Printf("[PowerMonitor] Power: %.2f, Threshold: %.2f, Busy: %t\n", b.Power.Float(), b.Threshold.Float(), b.IsBusy())
+
 }
 
 func (b *PowerMonitor) NotBusySignal() <-chan struct{} {

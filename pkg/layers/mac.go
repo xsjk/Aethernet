@@ -71,6 +71,11 @@ type RandomBackoffTimer struct {
 
 func (b RandomBackoffTimer) GetBackoffTime(retries int) time.Duration {
 	return b.MinDelay + time.Duration(rand.Int63n(int64(b.MaxDelay-b.MinDelay)))
+	// if rand.Intn(2) == 0 {
+	// 	return b.MinDelay
+	// } else {
+	// 	return b.MaxDelay
+	// }
 }
 
 type MACLayer struct {
@@ -84,8 +89,8 @@ type MACLayer struct {
 	BackoffTimer BackoffTimer
 
 	// Send
-	receivedACK   chan struct{}
 	expectedIndex uint8
+	receivedACK   chan uint8
 
 	// Receive
 	currentPacket []byte
@@ -94,66 +99,79 @@ type MACLayer struct {
 
 func (m *MACLayer) Open() {
 	m.PhysicalLayer.Open()
-	m.receivedACK = make(chan struct{})
+	m.receivedACK = make(chan uint8, 1)
 	go func() {
-		for {
-			packet := m.PhysicalLayer.Receive()
+		for packet := range m.PhysicalLayer.ReceiveAsync() {
 			header := MACHeader{}
 			header.FromBytes(packet[:header.NumBytes()])
 			if header.Destination == m.Address {
+				if len(packet) < header.NumBytes() {
+					fmt.Printf("[MAC%x] Packet is too short, dropping\n", m.Address)
+					panic("Packet is too short")
+				}
 				m.handle(header, packet[header.NumBytes():])
 			}
 		}
 	}()
 }
 
+func (m *MACLayer) sendACK(address MACAddress, index uint8) {
+	// <-m.PowerFreeSignal()
+	m.PhysicalLayer.Send(MACHeader{
+		Source:      m.Address,
+		Destination: address,
+		Type:        MACTypeACK,
+		Index:       index,
+	}.ToBytes())
+	fmt.Printf("[MAC%x] ACK for packet %d sent\n", m.Address, index)
+}
+
 func (m *MACLayer) handle(header MACHeader, data []byte) {
 
 	switch header.Type {
 	case MACTypeData:
-		m.currentPacket = append(m.currentPacket, data...)
-		if header.IsLast {
-			select {
-			case m.OutputChan <- m.currentPacket:
-				fmt.Printf("[MAC%x] Packet %d received\n", m.Address, header.Index)
-			default:
-				fmt.Printf("[MAC%x] Output channel is full\n", m.Address)
-				panic("Output channel is full")
+		if header.Index == m.expectedIndex {
+			m.currentPacket = append(m.currentPacket, data...)
+			fmt.Printf("[MAC%x] Append packet %d, length %d, total %d\n", m.Address, header.Index, len(data), len(m.currentPacket))
+			m.expectedIndex++
+			if header.IsLast {
+				m.expectedIndex = 0
+				select {
+				case m.OutputChan <- m.currentPacket:
+					fmt.Printf("[MAC%x] Packet %d received\n", m.Address, header.Index)
+				default:
+					fmt.Printf("[MAC%x] Output channel is full\n", m.Address)
+					panic("Output channel is full")
+				}
+				m.currentPacket = nil
 			}
-			m.currentPacket = nil
+			go m.sendACK(header.Source, header.Index)
+		} else if header.Index == m.expectedIndex-1 {
+			fmt.Printf("[MAC%x] Packet %d is a duplicate, resending ACK\n", m.Address, header.Index)
+			go m.sendACK(header.Source, header.Index)
+		} else {
+			fmt.Printf("[MAC%x] Packet %d is not expected, expected %d\n", m.Address, header.Index, m.expectedIndex)
 		}
-		// send the ACK
-		fmt.Printf("[MAC%x] ACK for packet %d sent\n", m.Address, header.Index)
-		go m.PhysicalLayer.Send(MACHeader{
-			Source:      m.Address,
-			Destination: header.Source,
-			Type:        MACTypeACK,
-			Index:       header.Index,
-		}.ToBytes())
 	case MACTypeACK:
 		// check the index with the current sending packet
-		fmt.Printf("[MAC%x] ACK for packet %d received\n", m.Address, header.Index)
-		if m.expectedIndex == header.Index {
-
-			// make sure m.receiveACK is not closed
-			select {
-			case <-m.receivedACK:
-				panic("m.receivedACK is not open")
-			default:
+		select {
+		case m.receivedACK <- header.Index:
+			// Someone is waiting for the ACK
+		default:
+			for i := 0; i < len(m.receivedACK); i++ {
+				index := <-m.receivedACK
+				fmt.Printf("[MAC%x] ACK channel is full, dropping packet %d\n", m.Address, index)
+				if index != header.Index {
+					m.receivedACK <- index
+				}
 			}
-
 			select {
-			case m.receivedACK <- struct{}{}:
-				// Someone is waiting for the ACK
+			case m.receivedACK <- header.Index:
 			default:
-				// Nobody is waiting for the data to be sent now (we arrive here too early)
-				close(m.receivedACK)
+				panic("ACK channel is full")
 			}
-			// fmt.Printf("[MAC%x] ACK Notify End %v\n", m.Address, r)
-		} else {
-			fmt.Printf("[MAC%x] ACK for packet %d is not expected, expected %d\n", m.Address, header.Index, m.expectedIndex)
-			// panic("ACK for packet is not expected")
 		}
+
 	}
 }
 
@@ -187,13 +205,21 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 	// send the packets
 	for i, packet := range packets {
 		retries := 0
+		backoff := time.Duration(0)
+
 	resend:
+
 		for {
+			var ackReceived chan struct{}
+			var ackStopListening chan struct{}
+			var stopListening chan struct{}
+
 			// // wait for the physical layer to be not busy
 			// <-m.PowerFreeSignal()
 			m.PowerMonitor.Log()
 			fmt.Printf("[MAC%x] Sending packet %d\t\n", m.Address, i)
 
+			m.PhysicalLayer.Decoder.Demodulator.ClearErrorSignal()
 			select {
 			case status := <-m.PhysicalLayer.SendAsync(packet):
 				fmt.Printf("[MAC%x] Packet %d sent to physical layer status %v\n", m.Address, i, status)
@@ -204,37 +230,79 @@ func (m *MACLayer) Send(address MACAddress, data []byte) error {
 				if m.BackoffTimer == nil {
 					fmt.Printf("[MAC%x] No backoff timer, retry immediately\n", m.Address)
 				} else {
-					backoff := m.BackoffTimer.GetBackoffTime(retries)
-					fmt.Printf("[MAC%x] Backoff for %v\n", m.Address, backoff)
-					time.Sleep(backoff)
+					backoff = m.BackoffTimer.GetBackoffTime(retries)
 				}
+				m.PhysicalLayer.CancelSend()
 				goto retry
 			}
 
 			// wait for the ACK
-			fmt.Printf("[MAC%x] is waiting for ACK", m.Address)
-			m.expectedIndex = uint8(i)
-			select {
-			case _, ok := <-m.receivedACK:
-				if !ok {
-					// Channel was closed since the ACK was detected before we are waiting it, reopen the channel
-					m.receivedACK = make(chan struct{})
+			fmt.Printf("[MAC%x] is waiting for ACK of packet %d\n", m.Address, i)
+
+			ackReceived = make(chan struct{})
+			ackStopListening = make(chan struct{})
+			stopListening = make(chan struct{})
+
+			go func() {
+				for {
+					select {
+					case index := <-m.receivedACK:
+						if index == uint8(i) {
+							ackReceived <- struct{}{}
+							close(ackStopListening)
+							return
+						} else {
+							fmt.Printf("[MAC%x] ACK for packet %d is not expected, expected %d\n", m.Address, index, i)
+						}
+					case ackStopListening <- struct{}{}:
+						return
+					case <-stopListening:
+						return
+					}
 				}
+			}()
+
+			m.PhysicalLayer.Decoder.Demodulator.ClearErrorSignal()
+
+			select {
+			case <-ackReceived:
 				// ACK received
-				fmt.Printf("[MAC%x] Packet %d sent and ACK received\n", m.Address, i)
+				<-ackStopListening
+				fmt.Printf("[MAC%x] Packet %d ACK received\n", m.Address, i)
 				break resend
 			case <-time.After(m.ACKTimeout):
 				// ACK timeout
-				fmt.Printf("[MAC%x] Packet %d ACK timeout\n", m.Address, i)
+				<-ackStopListening
+				fmt.Printf("[MAC%x] Packet %d ACK timeout retry %d\n", m.Address, i, retries)
+				goto retry
+
+			case err := <-m.PhysicalLayer.DecodeErrorSignal():
+				fmt.Printf("[MAC%x] Decode error %v while waiting for ack of %d, possibly due to collision\n\n", m.Address, err, i)
+				// Collision detected, resend the packet after a random backoff time
+				if m.BackoffTimer == nil {
+					fmt.Printf("[MAC%x] No backoff timer, retry immediately\n", m.Address)
+				} else {
+					backoff = m.BackoffTimer.GetBackoffTime(retries)
+				}
+				m.PhysicalLayer.CancelSend()
 				goto retry
 			}
 
 		retry:
-			{
 
+			if stopListening != nil {
+				close(stopListening)
+			}
+
+			{
 				if retries >= m.MaxRetries {
-					return fmt.Errorf("packet %d ACK timeout", i)
+					return fmt.Errorf("packet %d ACK timeout after %d retries", i, m.MaxRetries)
 				} else {
+					if backoff != 0 {
+						fmt.Printf("[MAC%x] Backoff for %v\n", m.Address, backoff)
+						<-time.After(backoff)
+						backoff = 0
+					}
 					retries++
 					fmt.Printf("[MAC%x] Resending packet %d, retry %d\n", m.Address, i, retries)
 					continue resend

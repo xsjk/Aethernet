@@ -5,6 +5,13 @@ import (
 	"Aethernet/pkg/fixed"
 	"fmt"
 	"sync"
+	"time"
+)
+
+const (
+	AJUST_THRESHOLD = fixed.Zero
+
+	HEADER_SIZE = 2
 )
 
 type ByteModem interface {
@@ -76,8 +83,9 @@ type Demodulator struct {
 		count int
 	}
 	currentHeader struct {
-		done bool
-		size int
+		done  bool
+		size  int
+		index int
 	}
 	currentChunk  []byte
 	currentPacket []byte
@@ -102,6 +110,10 @@ func (a *AdjustmentResampler) Update(currentSample fixed.T) (outputSample fixed.
 	a.LastSample = currentSample
 	outputSample = interpolate(lastSample, currentSample, a.P)
 	return
+}
+
+func (d *Demodulator) Init() {
+	d.errorSignal = make(chan error)
 }
 
 func (d *Demodulator) Reset() {
@@ -138,7 +150,7 @@ func (m Modulator) Modulate(inputBytes []byte) []int32 {
 
 	modulatedData := make([]int32, 0, frameCount*
 		(len(m.Preamble)+
-			10*(m.CarrierSizeForHeader*1+
+			10*(m.CarrierSizeForHeader*HEADER_SIZE+
 				m.CarrierSize*(m.BytePerFrame+1))+
 			m.FrameInterval))
 
@@ -165,12 +177,22 @@ func (m Modulator) Modulate(inputBytes []byte) []int32 {
 		modulatedData = append(modulatedData, m.Preamble...)
 
 		// add the header
-		header := byte(len(bytes))
-		if i == frameCount-1 {
-			header |= 0b10000000
+		if len(bytes) > 127 {
+			panic("Data is too long to fit in the header")
 		}
+		if i > 255 {
+			panic("Frame count is too large to fit in the header")
+		}
+		header := make([]byte, HEADER_SIZE)
+		header[0] = byte(len(bytes))
+		if i == frameCount-1 {
+			header[0] |= 0b10000000
+		}
+		header[1] = byte(i)
 		samplePerBit = m.CarrierSizeForHeader
-		BitSet(B8B10[header]).ForEach(modulateBit, 10)
+		for _, b := range header {
+			BitSet(B8B10[b]).ForEach(modulateBit, 10)
+		}
 
 		samplePerBit = m.CarrierSize
 
@@ -184,8 +206,6 @@ func (m Modulator) Modulate(inputBytes []byte) []int32 {
 
 		// modulate the CRC8 byte
 		BitSet(B8B10[crcByte]).ForEach(modulateBit, 10)
-
-		debugLog("[Modulation] CRC8: %v\n", ByteToBool([]byte{crcByte}))
 
 		// add the interval
 		for j := 0; j < m.FrameInterval; j++ {
@@ -218,6 +238,7 @@ func (d *Demodulator) Update(currentSample int32) (err error) {
 	case dataExtraction:
 		err = d.extractData(currentSample)
 	}
+
 	return
 }
 
@@ -264,6 +285,11 @@ func (d *Demodulator) detectPreamble(currentSample int32) (err error) {
 
 			dotProductLatter := power - fixed.T((int64(d.currentWindow[len(d.Preamble)-2])*int64(d.Preamble[len(d.Preamble)-1]))>>(31+fixed.N))
 			d.adjustment = estimateAdjustment(d.localMaxPowerPrev, d.localMaxPower, dotProductLatter)
+			if d.adjustment > AJUST_THRESHOLD {
+				d.adjustment = -AJUST_THRESHOLD
+			} else if d.adjustment < -AJUST_THRESHOLD {
+				d.adjustment = AJUST_THRESHOLD
+			}
 			if d.adjustment > 0 {
 				d.resampler.P = d.adjustment
 			} else {
@@ -361,11 +387,11 @@ func (d *Demodulator) extractData(currentSample int32) (err error) {
 
 	currentByte, exists := B10B8[d.currentBits.data.Value]
 	if !exists {
-		debugLog("[Demodulation] Warning: B10B8 does not contain key %v\n", d.currentBits.data.Value)
 		err = fmt.Errorf("B10B8 does not contain key %v", d.currentBits.data.Value)
 		d.currentBits.data.Value = 0
 		d.currentBits.count = 0
 		d.demodulateState = preambleDetection
+		d.currentPacket = []byte{}
 		return
 	}
 	d.currentBits.data.Value = 0
@@ -380,15 +406,39 @@ func (d *Demodulator) extractData(currentSample int32) (err error) {
 		err = d.receiveCRC(currentByte)
 	}
 
+	if d.demodulateState == preambleDetection {
+		err = d.detectPreamble(currentSample)
+	}
+
 	return
 }
 
 func (d *Demodulator) receiveHeader(currentSample byte) (err error) {
-	d.currentHeader.done = currentSample&0b10000000 != 0
-	d.currentHeader.size = int(currentSample & 0b01111111)
+	d.currentChunk = append(d.currentChunk, currentSample)
+	if len(d.currentChunk) < HEADER_SIZE {
+		return
+	}
+	defer func() {
+		d.currentChunk = d.currentChunk[:0]
+	}()
+
+	currentIndex := int(d.currentChunk[1])
+	if currentIndex == 0 {
+		// a new packet is detected
+	} else if currentIndex != d.currentHeader.index+1 {
+		// the current packet is not following the previous packet
+		err = fmt.Errorf("current index %d is not the expected index %d", currentIndex, d.currentHeader.index+1)
+		d.demodulateState = preambleDetection
+		return
+	}
+	d.currentHeader.done = d.currentChunk[0]&0b10000000 != 0
+	d.currentHeader.size = int(d.currentChunk[0] & 0b01111111)
+	d.currentHeader.index = int(d.currentChunk[1])
+	if d.currentHeader.done {
+		debugLog("[Demodulation] Last packet got\n")
+	}
 
 	if d.currentHeader.size == 0 { // invalid packet
-		debugLog("[Demodulation] Warning: header.size is 0, invalid packet\n")
 		err = fmt.Errorf("header.size is 0, invalid packet")
 		d.demodulateState = preambleDetection
 		return
@@ -397,9 +447,6 @@ func (d *Demodulator) receiveHeader(currentSample byte) (err error) {
 	// prepare for receiving data
 	d.crcChecker.Reset()
 	d.dataExtractionState = receiveData
-	if len(d.currentChunk) != 0 {
-		panic("rDataDecoded is not empty")
-	}
 	return
 }
 
@@ -415,10 +462,18 @@ func (d *Demodulator) receiveData(currentSample byte) (err error) {
 func (d *Demodulator) receiveCRC(currentSample byte) (err error) {
 	crcOK := d.crcChecker.Get() == currentSample
 	if crcOK {
-		debugLog("[Demodulation] CRC8 check passed length: %d\n", len(d.currentChunk))
 		d.currentPacket = append(d.currentPacket, d.currentChunk...)
+		debugLog("[Demodulation] CRC8 check passed length %d\n", len(d.currentPacket))
 		if d.currentHeader.done {
-			d.OutputChan <- d.currentPacket
+			select {
+			case d.OutputChan <- d.currentPacket:
+			case <-time.After(1 * time.Second):
+				panic("OutputChan is not consumed")
+				// default:
+				// 	debugLog("[Demodulation] Warning: OutputChan is full, dropping packet\n")
+				// 	<-d.OutputChan
+				// 	d.OutputChan <- d.currentPacket
+			}
 			d.currentPacket = []byte{}
 		}
 	} else {
@@ -435,17 +490,24 @@ func (d *Demodulator) receiveCRC(currentSample byte) (err error) {
 
 func (d *Demodulator) signalError(err error) {
 	if d.errorSignal == nil {
-		return
+		panic("errorSignal is nil")
 	}
 
 	// Signal the decode error
 	select {
 	case d.errorSignal <- err:
+	case <-d.errorSignal:
+		debugLog("[Demodulation] Warning: errorSignal is full, dropping error: %v\n", err)
+	}
+}
+
+func (d *Demodulator) ClearErrorSignal() {
+	select {
+	case <-d.errorSignal:
 	default:
 	}
 }
 
 func (d *Demodulator) ErrorSignal() <-chan error {
-	d.errorSignal = make(chan error)
 	return d.errorSignal
 }
