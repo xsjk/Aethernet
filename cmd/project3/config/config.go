@@ -3,11 +3,13 @@ package config
 import (
 	"Aethernet/pkg/device"
 	"Aethernet/pkg/fixed"
+	"Aethernet/pkg/iface"
 	"Aethernet/pkg/layers"
 	"Aethernet/pkg/modem"
+	"fmt"
 	"os"
+	"strings"
 
-	"github.com/xsjk/go-wintun"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,9 +47,11 @@ type Config struct {
 		Address int `yaml:"address"`
 	} `yaml:"mac_layer"`
 
-	Wintun struct {
-		Name string `yaml:"name"`
-		IP   string `yaml:"ip"`
+	Iface struct {
+		Type   string `yaml:"type"`
+		IP     string `yaml:"ip"`
+		Name   string `yaml:"name"`
+		Filter string `yaml:"filter"`
 	}
 }
 
@@ -105,9 +109,15 @@ func CreateNaiveDataLinkLayer(config *Config) *layers.NaiveDataLinkLayer {
 	}
 }
 
-func CreateWinTUN(config *Config) *wintun.Interface {
-	return &wintun.Interface{
-		Name: config.Wintun.Name,
-		IP:   config.Wintun.IP,
+func OpenInterface(config *Config) (iface.Interface, error) {
+	switch strings.ToLower(config.Iface.Type) {
+	case "tun":
+		return iface.OpenTUN(config.Iface.IP, config.Iface.Name)
+	case "tap":
+		return iface.OpenTAP(config.Iface.IP)
+	case "pcap":
+		return iface.OpenPCAP(config.Iface.Name, config.Iface.Filter)
+	default:
+		return nil, fmt.Errorf("Unknown interface type: %s, expected 'tun', 'tap' or 'pcap'", config.Iface.Type)
 	}
 }

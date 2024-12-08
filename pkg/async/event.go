@@ -3,6 +3,8 @@ package async
 import (
 	"bufio"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func EnterKey() <-chan struct{} {
@@ -12,4 +14,10 @@ func EnterKey() <-chan struct{} {
 		close(done)
 	}()
 	return done
+}
+
+func Exit() <-chan os.Signal {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	return sigChan
 }

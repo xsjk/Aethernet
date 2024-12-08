@@ -3,10 +3,10 @@ package main
 import (
 	"Aethernet/cmd/project3/config"
 	"Aethernet/pkg/async"
+	"Aethernet/pkg/iface"
 	"fmt"
 
 	"github.com/google/gopacket/layers"
-	"github.com/xsjk/go-wintun"
 )
 
 func main() {
@@ -20,32 +20,39 @@ func main() {
 	fmt.Printf("Config: %+v\n", cfg)
 
 	layer := config.CreateNaiveDataLinkLayer(cfg)
-	iface := config.CreateWinTUN(cfg)
+	handle, err := config.OpenInterface(cfg)
+	if err != nil {
+		fmt.Printf("Error opening interface: %v\n", err)
+		return
+	}
 
 	layer.Open()
 	defer layer.Close()
 
-	err = iface.Open()
+	err = handle.Open()
 	if err != nil {
 		fmt.Printf("Error opening TUN device: %v\n", err)
 		return
 	}
-	defer iface.Close()
+	defer handle.Close()
 
 	go func() {
 		for data := range layer.ReceiveAsync() {
-			packet := wintun.Decode(data)
+			packet, err := iface.DecodeIPPacket(data)
+			if err != nil {
+				fmt.Printf("Error decoding packet: %v\n", err)
+				continue
+			}
 			icmpv4 := packet.Layer(layers.LayerTypeICMPv4)
 			if icmpv4 != nil {
 				fmt.Printf("Received packet from Aethernet: %v\n", packet)
-				iface.Send(packet.Data())
+				handle.Write(packet.Data())
 			}
 		}
 	}()
 
 	go func() {
-		for data := range iface.ReceiveAsync() {
-			packet := wintun.Decode(data)
+		for packet := range handle.Packets() {
 			icmpv4 := packet.Layer(layers.LayerTypeICMPv4)
 			if icmpv4 != nil {
 				fmt.Printf("Received packet from WinTUN: %v\n", packet)
@@ -54,7 +61,7 @@ func main() {
 		}
 	}()
 
-	<-async.EnterKey()
+	<-async.Exit()
 	fmt.Println("Exiting...")
 
 }
