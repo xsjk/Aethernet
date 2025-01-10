@@ -88,7 +88,12 @@ func (p *PhysicalLayer) Send(data []byte) {
 }
 
 func (p *PhysicalLayer) SendAsync(data []byte) <-chan bool {
-	return p.Encoder.sendAsync(data)
+	done := make(chan bool)
+	go func() {
+		<-p.PowerMonitor.NotBusySignal()
+		done <- <-p.Encoder.sendAsync(data)
+	}()
+	return done
 }
 
 func (p *PhysicalLayer) IsSending() bool {

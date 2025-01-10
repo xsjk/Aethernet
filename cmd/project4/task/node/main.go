@@ -69,7 +69,7 @@ func main() {
 	go func() {
 		for data := range layer.ReceiveAsync() {
 			packet, _ := iface.DecodeIPPacket(data)
-			if allow(packet) {
+			if packet != nil && allow(packet) {
 				fmt.Printf("Received packet from Aethernet: %v\n", packet)
 				handle.Write(packet.Data())
 			}

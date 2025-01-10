@@ -500,6 +500,8 @@ func (d *Demodulator) signalError(err error) {
 	case d.errorSignal <- err:
 	case <-d.errorSignal:
 		debugLog("[Demodulation] Warning: errorSignal is full, dropping error: %v\n", err)
+	default:
+		debugLog("[Demodulation] Warning: errorSignal is not consumed, dropping error: %v\n", err)
 	}
 }
 
