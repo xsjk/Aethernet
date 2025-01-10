@@ -5,9 +5,39 @@ import (
 	"Aethernet/pkg/async"
 	"Aethernet/pkg/iface"
 	"fmt"
+	"strings"
 
+	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
+
+var allowedDNSQueries = []string{"baidu", "example"}
+
+func allow(packet gopacket.Packet) (allow bool) {
+
+	icmpv4 := packet.Layer(layers.LayerTypeICMPv4)
+	dns := packet.Layer(layers.LayerTypeDNS)
+	tcp := packet.Layer(layers.LayerTypeTCP)
+	if icmpv4 != nil {
+		allow = true
+	} else if dns != nil {
+		dnsLayer := dns.(*layers.DNS)
+		for _, query := range dnsLayer.Questions {
+			if query.Type != layers.DNSTypeA {
+				return false
+			}
+			for _, allowQuery := range allowedDNSQueries {
+				if strings.Contains(string(query.Name), allowQuery) {
+					allow = true
+					break
+				}
+			}
+		}
+	} else if tcp != nil {
+		allow = true
+	}
+	return
+}
 
 func main() {
 
@@ -38,15 +68,8 @@ func main() {
 
 	go func() {
 		for data := range layer.ReceiveAsync() {
-			packet, err := iface.DecodeIPPacket(data)
-			if err != nil {
-				fmt.Printf("Error decoding packet: %v\n", err)
-				continue
-			}
-			icmpv4 := packet.Layer(layers.LayerTypeICMPv4)
-			dns := packet.Layer(layers.LayerTypeDNS)
-			tcp := packet.Layer(layers.LayerTypeTCP)
-			if icmpv4 != nil || dns != nil || tcp != nil {
+			packet, _ := iface.DecodeIPPacket(data)
+			if allow(packet) {
 				fmt.Printf("Received packet from Aethernet: %v\n", packet)
 				handle.Write(packet.Data())
 			}
@@ -55,10 +78,7 @@ func main() {
 
 	go func() {
 		for packet := range handle.Packets() {
-			icmpv4 := packet.Layer(layers.LayerTypeICMPv4)
-			dns := packet.Layer(layers.LayerTypeDNS)
-			tcp := packet.Layer(layers.LayerTypeTCP)
-			if icmpv4 != nil || dns != nil || tcp != nil {
+			if allow(packet) {
 				fmt.Printf("Received packet from WinTUN: %v\n", packet)
 				layer.Send(packet.Data())
 			}
